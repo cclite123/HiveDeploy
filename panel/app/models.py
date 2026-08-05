@@ -86,6 +86,23 @@ class SiteConfig(Base):
     value = Column(Text, default="")
 
 
+class ProgressTask(Base):
+    """可跨页面刷新查询的后台任务进度。"""
+    __tablename__ = "progress_tasks"
+
+    id = Column(String(32), primary_key=True)
+    username = Column(String(32), nullable=False, index=True)
+    kind = Column(String(32), nullable=False)
+    target = Column(String(32), nullable=False, default="both")
+    status = Column(String(16), nullable=False, default="running", index=True)
+    step = Column(Text, default="")
+    detail = Column(Text, default="")
+    error = Column(Text, default="")
+    started_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    finished_at = Column(DateTime, nullable=True)
+
+
 class Announcement(Base):
     """前台公告，多条竖列展示"""
     __tablename__ = "announcements"

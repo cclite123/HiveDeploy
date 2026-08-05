@@ -1273,7 +1273,13 @@ async function startUpdate(target, skipConfirm=false){
   document.getElementById('updateSpinner').classList.remove('d-none');
   let url='/api/instance/update',progressUrl='/api/instance/update_progress';
   if(target!=='both'){url=`/api/instance/update/${target}`;progressUrl=`/api/instance/update_progress/${target}`;}
-  await fetch(url,{method:'POST'});
+  const started=await fetch(url,{method:'POST'});
+  const result=await started.json();
+  if(!started.ok || !result.ok){
+    document.getElementById('updateSpinner').classList.add('d-none');
+    document.getElementById('updateStep').textContent='❌ '+(result.error||__i('common.unknown_error', '未知错误'));
+    return;
+  }
   if(_ut)clearInterval(_ut);
   _ut=setInterval(async()=>{
     const p=await(await fetch(progressUrl)).json();
@@ -1284,5 +1290,65 @@ async function startUpdate(target, skipConfirm=false){
     if(p.error){clearInterval(_ut);document.getElementById('updateSpinner').classList.add('d-none');document.getElementById('updateStep').innerHTML='❌ '+p.error;showToast(p.error, 'error');}
   },1500);
 }
+
+// 页面刷新后从数据库恢复后台任务。轮询只依赖 task_id/状态，不会重复触发操作。
+let _resumeTaskTimer=null;
+function taskProgressElements(task){
+  if(task.kind==='port_rebuild' && document.getElementById('portRebuildBox')){
+    return {
+      box:document.getElementById('portRebuildBox'),
+      spinner:document.getElementById('portRebuildSpinner'),
+      step:document.getElementById('portRebuildStep'),
+      detail:document.getElementById('portRebuildDetail')
+    };
+  }
+  if(task.kind==='instance_create'){
+    if(document.getElementById('progressBox')){
+      return {box:document.getElementById('progressBox'),spinner:document.querySelector('#progressBox .spinner-border'),step:document.getElementById('progressStep'),detail:document.getElementById('progressDetail')};
+    }
+    if(document.getElementById('singleCreateBox')){
+      return {box:document.getElementById('singleCreateBox'),spinner:document.querySelector('#singleCreateBox .spinner-border'),step:document.getElementById('singleCreateStep'),detail:document.getElementById('singleCreateDetail')};
+    }
+  }
+  if(document.getElementById('updateProgressBox')){
+    return {box:document.getElementById('updateProgressBox'),spinner:document.getElementById('updateSpinner'),step:document.getElementById('updateStep'),detail:document.getElementById('updateDetail')};
+  }
+  return null;
+}
+function renderPersistedTask(task){
+  const els=taskProgressElements(task);
+  if(!els)return;
+  els.box.classList.remove('d-none');
+  if(els.detail)els.detail.textContent=task.detail||'';
+  if(task.status==='running'){
+    if(els.spinner)els.spinner.classList.remove('d-none');
+    els.step.textContent=task.step||__i('dashboard.initializing', '初始化中...');
+  }else if(task.status==='success'){
+    if(els.spinner)els.spinner.classList.add('d-none');
+    els.step.textContent='✅ '+(task.step||__i('dashboard.update_complete', '任务完成'));
+  }else{
+    if(els.spinner)els.spinner.classList.add('d-none');
+    els.step.textContent='❌ '+(task.error||task.step||__i('common.unknown_error', '未知错误'));
+  }
+}
+async function resumeActiveTask(){
+  try{
+    const task=await(await fetch('/api/instance/update_progress/current')).json();
+    if(!task.task_id)return;
+    renderPersistedTask(task);
+    if(_resumeTaskTimer)clearInterval(_resumeTaskTimer);
+    if(task.status==='running'){
+      _resumeTaskTimer=setInterval(async()=>{
+        const current=await(await fetch('/api/instance/update_progress/current')).json();
+        renderPersistedTask(current);
+        if(current.status!=='running'){
+          clearInterval(_resumeTaskTimer);
+          _resumeTaskTimer=null;
+        }
+      },1500);
+    }
+  }catch(e){}
+}
+resumeActiveTask();
 </script>
 {% endblock %}

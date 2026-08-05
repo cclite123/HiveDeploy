@@ -19,10 +19,12 @@ from .docker_manager import (
     calc_ports, calc_extra_ports,
     pull_and_recreate, pull_and_recreate_single,
     get_pull_progress, get_single_pull_progress,
+    get_current_progress,
     create_single_service_async, detect_public_ip,
     check_port_conflicts, get_affected_services, stop_affected_services, recreate_services,
     configure_napcat_astrbot,
 )
+from .progress_store import TaskAlreadyRunning
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -94,8 +96,12 @@ async def create_instance(user: User = Depends(get_current_user_from_cookie),
         status="creating",
     )
     db.add(inst); db.commit()
-    create_user_instance_async(user.username, user.id, _cb, bot_type=bot_type)
-    return JSONResponse({"ok": True})
+    try:
+        task = create_user_instance_async(user.username, user.id, _cb, bot_type=bot_type)
+    except TaskAlreadyRunning as exc:
+        db.delete(inst); db.commit()
+        return JSONResponse({"ok": False, "error": str(exc), "task": exc.task}, status_code=409)
+    return JSONResponse({"ok": True, "task_id": task["task_id"]})
 
 
 @router.get("/api/instance/progress")
@@ -172,6 +178,10 @@ async def create_single(service: str,
     if service not in VALID_SERVICES: raise HTTPException(400)
 
     inst = db.query(Instance).filter_by(user_id=user.id).first()
+    active_task = get_current_progress(user.username)
+    if active_task.get("running"):
+        return JSONResponse({"ok": False, "error": "已有后台任务正在执行",
+                             "task": active_task}, status_code=409)
     if not inst:
         ports = calc_ports(user.id)
         inst = Instance(
@@ -194,8 +204,11 @@ async def create_single(service: str,
             db.commit()
 
     extra_ports = json.loads(inst.extra_ports_json or "[]")
-    create_single_service_async(user.username, user.id, service, extra_ports)
-    return JSONResponse({"ok": True})
+    try:
+        task = create_single_service_async(user.username, user.id, service, extra_ports)
+    except TaskAlreadyRunning as exc:
+        return JSONResponse({"ok": False, "error": str(exc), "task": exc.task}, status_code=409)
+    return JSONResponse({"ok": True, "task_id": task["task_id"]})
 
 
 @router.post("/api/instance/delete/{service}")
@@ -240,15 +253,27 @@ async def update_instance(user: User = Depends(get_current_user_from_cookie),
                           db: Session = Depends(get_db)):
     inst = db.query(Instance).filter_by(user_id=user.id).first()
     if not inst: return JSONResponse({"error": "实例不存在"})
+    active_task = get_current_progress(user.username)
+    if active_task.get("running"):
+        return JSONResponse({"ok": False, "error": "已有后台任务正在执行",
+                             "task": active_task}, status_code=409)
     extra_ports = json.loads(inst.extra_ports_json or "[]")
-    pull_and_recreate(user.username, user.id, extra_ports,
-                      bot_type=inst.bot_type or "napcat")
-    return JSONResponse({"ok": True})
+    try:
+        task = pull_and_recreate(user.username, user.id, extra_ports,
+                                 bot_type=inst.bot_type or "napcat")
+    except TaskAlreadyRunning as exc:
+        return JSONResponse({"ok": False, "error": str(exc), "task": exc.task}, status_code=409)
+    return JSONResponse({"ok": True, "task_id": task["task_id"]})
 
 
 @router.get("/api/instance/update_progress")
 async def update_progress(user: User = Depends(get_current_user_from_cookie)):
     return JSONResponse(get_pull_progress(user.username))
+
+
+@router.get("/api/instance/update_progress/current")
+async def current_update_progress(user: User = Depends(get_current_user_from_cookie)):
+    return JSONResponse(get_current_progress(user.username))
 
 
 @router.post("/api/instance/update/{service}")
@@ -259,6 +284,10 @@ async def update_single(service: str,
         raise HTTPException(400, "无效服务")
     inst = db.query(Instance).filter_by(user_id=user.id).first()
     if not inst: return JSONResponse({"error": "实例不存在"})
+    active_task = get_current_progress(user.username)
+    if active_task.get("running"):
+        return JSONResponse({"ok": False, "error": "已有后台任务正在执行",
+                             "task": active_task}, status_code=409)
     extra_ports = json.loads(inst.extra_ports_json or "[]")
     if service in ("napcat", "llonebot"):
         inst.bot_type = service
@@ -267,8 +296,11 @@ async def update_single(service: str,
         extra_ports = [ep for ep in extra_ports if ep.get("service") in ("astrbot", service)]
         inst.extra_ports_json = json.dumps(extra_ports)
         db.commit()
-    pull_and_recreate_single(user.username, user.id, service, extra_ports)
-    return JSONResponse({"ok": True})
+    try:
+        task = pull_and_recreate_single(user.username, user.id, service, extra_ports)
+    except TaskAlreadyRunning as exc:
+        return JSONResponse({"ok": False, "error": str(exc), "task": exc.task}, status_code=409)
+    return JSONResponse({"ok": True, "task_id": task["task_id"]})
 
 
 @router.get("/api/instance/update_progress/{service}")
@@ -344,6 +376,11 @@ async def save_extra_ports(request: Request,
         return JSONResponse({"ok": True, "rebuilt": False,
                              "message": "配置未变化，已保存（无需重建容器）"})
 
+    active_task = get_current_progress(user.username)
+    if active_task.get("running"):
+        return JSONResponse({"ok": False, "error": "已有后台任务正在执行",
+                             "task": active_task}, status_code=409)
+
     # 检查新端口是否被非重建容器占用（排除即将重建的容器）
     new_host_ports = [m["host_port"] for m in new_mappings
                       if m.get("service") in affected]
@@ -362,8 +399,12 @@ async def save_extra_ports(request: Request,
 
     inst.extra_ports_json = json.dumps(new_mappings)
     db.commit()
-    recreate_services(user.username, user.id, affected, new_mappings, old_mappings)
-    return JSONResponse({"ok": True, "rebuilt": True, "affected": affected})
+    try:
+        task = recreate_services(user.username, user.id, affected, new_mappings, old_mappings)
+    except TaskAlreadyRunning as exc:
+        return JSONResponse({"ok": False, "error": str(exc), "task": exc.task}, status_code=409)
+    return JSONResponse({"ok": True, "rebuilt": True, "affected": affected,
+                         "task_id": task["task_id"]})
 
 
 # ════════════════════════════════════════════════════════════

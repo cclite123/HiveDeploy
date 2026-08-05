@@ -13,6 +13,12 @@ import urllib.request
 from urllib.parse import urlparse
 from typing import Dict, Any, List, Optional, Callable
 
+from .progress_store import (
+    get_current_task,
+    start_task,
+    update_task,
+)
+
 logger = logging.getLogger(__name__)
 
 DATA_DIR      = os.environ.get("DATA_DIR", "/data/instances")
@@ -233,8 +239,8 @@ def pull_with_fallback(client, image: str, progress_cb: Callable[[str, str], Non
 
 PANEL_NETWORK = os.environ.get("PANEL_NETWORK", "bot_panel_net")
 
-_creation_progress: Dict[str, Dict] = {}
-_pull_progress: Dict[str, Dict] = {}
+_progress_task_ids: Dict[str, str] = {}
+_progress_task_lock = threading.RLock()
 
 try:
     _client = docker.from_env()
@@ -288,24 +294,46 @@ def calc_extra_ports(user_id: int) -> List[int]:
 
 
 def get_creation_progress(username: str) -> Dict:
-    return _creation_progress.get(username, {})
+    return get_current_task(username)
+
+
+def get_current_progress(username: str) -> Dict:
+    """返回当前用户正在执行的任务，若无则返回最近一次任务。"""
+    return get_current_task(username)
+
+
+def _begin_progress_task(key: str, username: str, kind: str,
+                         target: str, step: str) -> Dict:
+    task = start_task(username, kind, target, step)
+    with _progress_task_lock:
+        _progress_task_ids[key] = task["task_id"]
+    return task
+
+
+def _persist_progress(key: str, step: str, detail: str = "",
+                      done: bool = False, error: str = "") -> Dict:
+    with _progress_task_lock:
+        task_id = _progress_task_ids.get(key)
+    if not task_id:
+        return {}
+    return update_task(task_id, step, detail, done=done, error=error)
 
 
 def _set_progress(username: str, step: str, detail: str = "", done: bool = False, error: str = ""):
-    _creation_progress[username] = {"step": step, "detail": detail, "done": done, "error": error}
+    _persist_progress(username, step, detail, done, error)
     logger.info(f"[{username}] {step} {detail}")
 
 
 def get_pull_progress(username: str) -> dict:
-    return _pull_progress.get(f"{username}:both", {})
+    return get_current_task(username, "both")
 
 
 def get_single_pull_progress(username: str, service: str) -> dict:
-    return _pull_progress.get(f"{username}:{service}", {})
+    return get_current_task(username, service)
 
 
 def _set_pull_progress(key: str, step: str, detail: str = "", done: bool = False, error: str = ""):
-    _pull_progress[key] = {"step": step, "detail": detail, "done": done, "error": error}
+    _persist_progress(key, step, detail, done, error)
     logger.info(f"[pull:{key}] {step} {detail}")
 
 
@@ -769,13 +797,14 @@ def _create_instance_background(username: str, user_id: int, extra_ports: List[D
 
 
 def create_user_instance_async(username: str, user_id: int, callback, extra_ports: List[Dict] = None, bot_type: str = "napcat"):
-    _set_progress(username, "初始化中...")
+    task = _begin_progress_task(username, username, "instance_create", "both", "初始化中...")
     t = threading.Thread(
         target=_create_instance_background,
         args=(username, user_id, extra_ports or [], bot_type, callback),
         daemon=True,
     )
     t.start()
+    return task
 
 
 def _force_remove(client, name: str):
@@ -1001,8 +1030,11 @@ def recreate_services(username: str, user_id: int, services: List[str],
                     logger.exception(f"回退也失败: {username}")
             _set_pull_progress(key, "重建失败", error=str(e))
 
-    _set_pull_progress(key, f"初始化启动 {'+'.join(services)}...")
+    task = _begin_progress_task(
+        key, username, "port_rebuild", "both", f"初始化启动 {'+'.join(services)}..."
+    )
     threading.Thread(target=_run, daemon=True).start()
+    return task
 
 
 def create_single_service_async(username: str, user_id: int, service: str, extra_ports: List[Dict] = None):
@@ -1088,8 +1120,11 @@ def create_single_service_async(username: str, user_id: int, service: str, extra
             logger.exception(f"单服务创建失败: {username}/{service}")
             _set_progress(username, f"{label} 创建失败", error=str(e))
 
-    _set_progress(username, f"初始化 {label}...")
+    task = _begin_progress_task(
+        username, username, "instance_create", service, f"初始化 {label}..."
+    )
     threading.Thread(target=_run, daemon=True).start()
+    return task
 
 
 def _recreate_containers(client, username: str, user_id: int, extra_ports: List[Dict], bot_type: str = "napcat"):
@@ -1167,8 +1202,9 @@ def pull_and_recreate(username: str, user_id: int, extra_ports: List[Dict] = Non
             logger.exception(f"全量更新失败: {username}")
             _set_pull_progress(key, "更新失败", error=str(e))
 
-    _set_pull_progress(key, "初始化更新...")
+    task = _begin_progress_task(key, username, "image_update", "both", "初始化更新...")
     threading.Thread(target=_run, daemon=True).start()
+    return task
 
 
 def recreate_only(username: str, user_id: int, extra_ports: List[Dict] = None, bot_type: str = "napcat"):
@@ -1193,8 +1229,9 @@ def recreate_only(username: str, user_id: int, extra_ports: List[Dict] = None, b
             logger.exception(f"重建容器失败: {username}")
             _set_pull_progress(key, "重建失败", error=str(e))
 
-    _set_pull_progress(key, "初始化重建...")
+    task = _begin_progress_task(key, username, "container_rebuild", "both", "初始化重建...")
     threading.Thread(target=_run, daemon=True).start()
+    return task
 
 
 def pull_and_recreate_single(username: str, user_id: int, service: str, extra_ports: List[Dict] = None):
@@ -1270,8 +1307,9 @@ def pull_and_recreate_single(username: str, user_id: int, service: str, extra_po
             logger.exception(f"单服务更新失败: {username}/{service}")
             _set_pull_progress(key, "更新失败", error=str(e))
 
-    _set_pull_progress(key, "初始化更新...")
+    task = _begin_progress_task(key, username, "image_update", service, "初始化更新...")
     threading.Thread(target=_run, daemon=True).start()
+    return task
 
 
 def stop_user_instance(username: str, service: str = None):

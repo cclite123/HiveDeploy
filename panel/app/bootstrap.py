@@ -224,6 +224,12 @@ from .models import Base, VerificationCode, SiteConfig as SC2
 Base.metadata.create_all(bind=engine)
 _run_migrations()
 
+# 后台线程无法跨面板进程存活。启动时明确结束遗留任务，避免页面永久显示“运行中”。
+from .progress_store import interrupt_running_tasks
+_interrupted_tasks = interrupt_running_tasks()
+if _interrupted_tasks:
+    logger.warning("已将 %s 个遗留后台任务标记为中断", _interrupted_tasks)
+
 
 def _ensure_site_config(key: str, value: str):
     db = SessionLocal()
