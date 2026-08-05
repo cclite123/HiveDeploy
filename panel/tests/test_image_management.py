@@ -1,5 +1,9 @@
+import asyncio
+import importlib
 import os
+import sys
 import tempfile
+import types
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -138,6 +142,46 @@ class ImageSourceTests(unittest.TestCase):
             ["selected.example/soulter/astrbot:latest", "fallback.example/soulter/astrbot:latest"],
             client.api.pulls,
         )
+
+
+class ImageAdminPageTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from app.database import engine
+        from app.models import Base
+        Base.metadata.create_all(bind=engine)
+
+    @classmethod
+    def tearDownClass(cls):
+        from app.database import engine
+        engine.dispose()
+
+    def test_admin_page_uses_current_template_response_signature(self):
+        from app.database import SessionLocal
+
+        class StrictTemplates:
+            def TemplateResponse(self, request, name, context):
+                return {"request": request, "name": name, "context": context}
+
+        fake_bootstrap = types.ModuleType("app.bootstrap")
+        fake_bootstrap.templates = StrictTemplates()
+        request = object()
+        with patch.dict(sys.modules, {"app.bootstrap": fake_bootstrap}):
+            sys.modules.pop("app.routes_images", None)
+            routes_images = importlib.import_module("app.routes_images")
+            db = SessionLocal()
+            try:
+                response = asyncio.run(routes_images.admin_images_page(
+                    request=request,
+                    user=SimpleNamespace(is_admin=True),
+                    db=db,
+                ))
+            finally:
+                db.close()
+                sys.modules.pop("app.routes_images", None)
+
+        self.assertIs(response["request"], request)
+        self.assertEqual("admin_images.html", response["name"])
 
 
 class ImageCleanupTests(unittest.TestCase):

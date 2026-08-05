@@ -62,8 +62,7 @@ async def admin_images_page(request: Request, user: User = Depends(require_admin
                             db: Session = Depends(get_db)):
     sources = db.query(ImageSource).order_by(ImageSource.priority, ImageSource.id).all()
     latest = db.query(ImageCleanupRun).order_by(ImageCleanupRun.started_at.desc()).first()
-    return templates.TemplateResponse("admin_images.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "admin_images.html", {
         "user": user,
         "sources": sources,
         "cleanup_enabled": _site_value(db, "image_cleanup_enabled", "false") == "true",
