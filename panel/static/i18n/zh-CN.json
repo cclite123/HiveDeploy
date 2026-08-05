@@ -39,7 +39,8 @@
     "email_templates": "邮件模板",
     "announcement_settings": "公告设置",
     "quick_tool_settings": "快捷工具设置",
-    "user_messages": "站内信"
+    "user_messages": "站内信",
+    "image_management": "镜像管理"
   },
   "login": {
     "title": "登录 — HiveDeploy",
@@ -278,7 +279,9 @@
     "copy_port_addr": "端口地址",
     "copy_token": "Token",
     "refreshing": "刷新中...",
-    "container_logs": "容器: {service}_{user} — 最近 {lines} 行"
+    "container_logs": "容器: {service}_{user} — 最近 {lines} 行",
+    "image_source": "镜像下载来源",
+    "image_source_auto": "自动选择（推荐）"
   },
   "profile": {
     "title": "个人设置 — HiveDeploy",
@@ -865,6 +868,9 @@
     "delete": "删除",
     "edit": "编辑",
     "create": "创建",
+    "add": "添加",
+    "enabled": "已启用",
+    "disabled": "已停用",
     "search": "搜索",
     "loading": "加载中...",
     "no_data": "暂无数据",
@@ -1022,6 +1028,29 @@
     "access": "权限",
     "badge": "角标",
     "badge_placeholder": "留空不显示"
+  },
+  "admin_images": {
+    "title": "镜像管理",
+    "heading": "镜像管理",
+    "subtitle": "维护下载来源，并安全清理过时的受管镜像。",
+    "sources": "镜像源",
+    "source_hint": "默认源优先；指定源失败后按此顺序回退",
+    "name": "名称",
+    "registry_placeholder": "域名[:端口][/路径前缀]",
+    "order": "顺序",
+    "address": "地址",
+    "status": "状态",
+    "actions": "操作",
+    "default": "默认",
+    "set_default": "设为默认",
+    "cleanup": "安全镜像清理",
+    "cleanup_safety": "只处理受管项目镜像；最新镜像和任何容器引用的镜像永不删除。",
+    "auto_cleanup": "启用每日自动清理",
+    "daily_time": "每日执行时间（Asia/Shanghai）",
+    "preview": "清理前预览",
+    "run_now": "立即执行",
+    "timer_warning": "启用前请先停用 hivedeploy-image-cleanup.timer，避免双重调度。",
+    "latest_run": "最近执行："
   },
   "theme": {
     "title": "主题设置",

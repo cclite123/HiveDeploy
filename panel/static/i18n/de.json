@@ -39,7 +39,8 @@
     "email_templates": "E-Mail-Vorlagen",
     "announcement_settings": "Ankündigungen",
     "quick_tool_settings": "Schnelltool-Einstellungen",
-    "user_messages": "Nachrichten"
+    "user_messages": "Nachrichten",
+    "image_management": "Image Management"
   },
   "login": {
     "title": "Anmeldung — HiveDeploy",
@@ -278,7 +279,9 @@
     "copy_port_addr": "Port-Adresse",
     "copy_token": "Token",
     "refreshing": "Aktualisierung...",
-    "container_logs": "Container: {service}_{user} — Letzte {lines} Zeilen"
+    "container_logs": "Container: {service}_{user} — Letzte {lines} Zeilen",
+    "image_source": "Image download source",
+    "image_source_auto": "Automatic selection (recommended)"
   },
   "profile": {
     "title": "Profileinstellungen — HiveDeploy",
@@ -865,6 +868,9 @@
     "delete": "Löschen",
     "edit": "Bearbeiten",
     "create": "Erstellen",
+    "add": "Add",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
     "search": "Suchen",
     "loading": "Laden...",
     "no_data": "Keine Daten",
@@ -1022,6 +1028,29 @@
     "access": "Zugriff",
     "badge": "Badge",
     "badge_placeholder": "Leer lassen zum Ausblenden"
+  },
+  "admin_images": {
+    "title": "Image Management",
+    "heading": "Image Management",
+    "subtitle": "Manage download sources and safely clean obsolete managed images.",
+    "sources": "Image Sources",
+    "source_hint": "The default source is tried first; a selected source falls back in this order",
+    "name": "Name",
+    "registry_placeholder": "domain[:port][/path prefix]",
+    "order": "Order",
+    "address": "Address",
+    "status": "Status",
+    "actions": "Actions",
+    "default": "Default",
+    "set_default": "Set default",
+    "cleanup": "Safe Image Cleanup",
+    "cleanup_safety": "Only managed project images are handled. Latest and container-referenced images are never deleted.",
+    "auto_cleanup": "Enable daily automatic cleanup",
+    "daily_time": "Daily time (Asia/Shanghai)",
+    "preview": "Preview cleanup",
+    "run_now": "Run now",
+    "timer_warning": "Disable hivedeploy-image-cleanup.timer before enabling this schedule to avoid duplicate jobs.",
+    "latest_run": "Latest run:"
   },
   "theme": {
     "title": "Design",

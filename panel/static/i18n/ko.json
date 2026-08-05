@@ -39,7 +39,8 @@
     "email_templates": "이메일 템플릿",
     "announcement_settings": "공지 설정",
     "quick_tool_settings": "빠른 도구 설정",
-    "user_messages": "쪽지"
+    "user_messages": "쪽지",
+    "image_management": "Image Management"
   },
   "login": {
     "title": "로그인 — HiveDeploy",
@@ -278,7 +279,9 @@
     "copy_port_addr": "포트 주소",
     "copy_token": "토큰",
     "refreshing": "새로고침 중...",
-    "container_logs": "컨테이너: {service}_{user} — 최근 {lines}줄"
+    "container_logs": "컨테이너: {service}_{user} — 최근 {lines}줄",
+    "image_source": "Image download source",
+    "image_source_auto": "Automatic selection (recommended)"
   },
   "profile": {
     "title": "프로필 설정 — HiveDeploy",
@@ -865,6 +868,9 @@
     "delete": "삭제",
     "edit": "편집",
     "create": "만들기",
+    "add": "Add",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
     "search": "검색",
     "loading": "로딩 중...",
     "no_data": "데이터 없음",
@@ -1022,6 +1028,29 @@
     "access": "권한",
     "badge": "배지",
     "badge_placeholder": "비우면 숨김"
+  },
+  "admin_images": {
+    "title": "Image Management",
+    "heading": "Image Management",
+    "subtitle": "Manage download sources and safely clean obsolete managed images.",
+    "sources": "Image Sources",
+    "source_hint": "The default source is tried first; a selected source falls back in this order",
+    "name": "Name",
+    "registry_placeholder": "domain[:port][/path prefix]",
+    "order": "Order",
+    "address": "Address",
+    "status": "Status",
+    "actions": "Actions",
+    "default": "Default",
+    "set_default": "Set default",
+    "cleanup": "Safe Image Cleanup",
+    "cleanup_safety": "Only managed project images are handled. Latest and container-referenced images are never deleted.",
+    "auto_cleanup": "Enable daily automatic cleanup",
+    "daily_time": "Daily time (Asia/Shanghai)",
+    "preview": "Preview cleanup",
+    "run_now": "Run now",
+    "timer_warning": "Disable hivedeploy-image-cleanup.timer before enabling this schedule to avoid duplicate jobs.",
+    "latest_run": "Latest run:"
   },
   "theme": {
     "title": "테마 설정",

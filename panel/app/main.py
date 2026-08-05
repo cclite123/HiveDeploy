@@ -12,6 +12,7 @@ from .routes_admin import router as admin_router
 from .routes_invites import router as invites_router
 from .routes_nodes import router as nodes_router
 from .routes_terminal import router as terminal_router
+from .routes_images import router as images_router
 
 app.include_router(auth_router)
 app.include_router(user_router)
@@ -21,3 +22,4 @@ app.include_router(admin_router)
 app.include_router(invites_router)
 app.include_router(nodes_router)
 app.include_router(terminal_router)
+app.include_router(images_router)

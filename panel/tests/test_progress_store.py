@@ -3,12 +3,12 @@ import os
 import tempfile
 import unittest
 
+os.environ.setdefault("DB_PATH", os.path.join(tempfile.gettempdir(), f"hivedeploy-tests-{os.getpid()}.db"))
+
 
 class ProgressStoreTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.tmp = tempfile.TemporaryDirectory()
-        os.environ["DB_PATH"] = os.path.join(cls.tmp.name, "progress.db")
         from app import database, models
         models.Base.metadata.create_all(bind=database.engine)
         cls.store = importlib.import_module("app.progress_store")
@@ -17,7 +17,6 @@ class ProgressStoreTests(unittest.TestCase):
     def tearDownClass(cls):
         from app.database import engine
         engine.dispose()
-        cls.tmp.cleanup()
 
     def setUp(self):
         from app.database import SessionLocal

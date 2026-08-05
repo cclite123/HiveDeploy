@@ -18,6 +18,7 @@ from .progress_store import (
     start_task,
     update_task,
 )
+from .image_management import resolve_image_registries
 
 logger = logging.getLogger(__name__)
 
@@ -110,19 +111,6 @@ def update_user_memory_limits(username: str, user_id: int) -> Dict[str, str]:
             result[service] = f"error: {e}"
     return result
 
-# 镜像源列表，优先官方，失败后依次尝试加速源
-# 格式：None = 官方 docker.io，字符串 = 镜像加速前缀
-IMAGE_REGISTRIES = [
-    None,                               # 官方源 docker.io
-    "docker.1ms.run",                   # 1ms 加速
-    "docker.m.daocloud.io",             # DaoCloud
-    "docker.kubesre.xyz",               # KubeSRE
-    "mirror.aliyuncs.com",              # 阿里云
-    "docker.mirrors.ustc.edu.cn",       # 中科大
-    "hub-mirror.c.163.com",             # 网易
-    "registry.docker-cn.com",           # Docker 官方中国
-]
-
 # ── 公网 IP 探测（带缓存） ────────────────────────────────────
 _cached_public_ip: Optional[str] = None
 
@@ -174,13 +162,15 @@ def _mirror_image(image: str, registry: Optional[str]) -> str:
     return f"{registry}/{image}"
 
 
-def pull_with_fallback(client, image: str, progress_cb: Callable[[str, str], None]) -> str:
+def pull_with_fallback(client, image: str, progress_cb: Callable[[str, str], None],
+                       registries: Optional[List[Optional[str]]] = None) -> str:
     """
     尝试从多个镜像源拉取镜像，返回成功拉取的镜像名（可能是加速源地址）。
     progress_cb(step, detail) 用于汇报进度。
     """
     last_error = None
-    for i, registry in enumerate(IMAGE_REGISTRIES):
+    registries = registries or resolve_image_registries()
+    for i, registry in enumerate(registries):
         mirror_img = _mirror_image(image, registry)
         source_name = registry or "官方源 (docker.io)"
         try:
@@ -231,7 +221,7 @@ def pull_with_fallback(client, image: str, progress_cb: Callable[[str, str], Non
         except Exception as e:
             last_error = str(e)
             logger.warning(f"从 {source_name} 拉取失败: {e}")
-            if i < len(IMAGE_REGISTRIES) - 1:
+            if i < len(registries) - 1:
                 progress_cb(f"源 {source_name} 失败，切换下一个源...", str(e)[:80])
                 time.sleep(1)  # 短暂等待后重试
 
@@ -715,7 +705,8 @@ def _build_extra_port_bindings(extra_ports: List[Dict]) -> Dict:
     return bindings
 
 
-def _create_instance_background(username: str, user_id: int, extra_ports: List[Dict], bot_type: str, callback):
+def _create_instance_background(username: str, user_id: int, extra_ports: List[Dict],
+                                bot_type: str, callback, registries):
     client = get_client()
     try:
         ensure_user_network()
@@ -752,7 +743,8 @@ def _create_instance_background(username: str, user_id: int, extra_ports: List[D
             _set_progress(username, f"正在拉取 {label} 镜像...", "这可能需要几分钟")
             pull_with_fallback(
                 client, image,
-                lambda step, detail, _l=label: _set_progress(username, step or f"正在拉取 {_l} 镜像...", detail)
+                lambda step, detail, _l=label: _set_progress(username, step or f"正在拉取 {_l} 镜像...", detail),
+                registries=registries,
             )
 
         # 弹性端口分组
@@ -796,11 +788,14 @@ def _create_instance_background(username: str, user_id: int, extra_ports: List[D
         callback(None, str(e))
 
 
-def create_user_instance_async(username: str, user_id: int, callback, extra_ports: List[Dict] = None, bot_type: str = "napcat"):
+def create_user_instance_async(username: str, user_id: int, callback,
+                               extra_ports: List[Dict] = None, bot_type: str = "napcat",
+                               image_source_id: Optional[int] = None):
+    registries = resolve_image_registries(image_source_id)
     task = _begin_progress_task(username, username, "instance_create", "both", "初始化中...")
     t = threading.Thread(
         target=_create_instance_background,
-        args=(username, user_id, extra_ports or [], bot_type, callback),
+        args=(username, user_id, extra_ports or [], bot_type, callback, registries),
         daemon=True,
     )
     t.start()
@@ -1037,11 +1032,14 @@ def recreate_services(username: str, user_id: int, services: List[str],
     return task
 
 
-def create_single_service_async(username: str, user_id: int, service: str, extra_ports: List[Dict] = None):
+def create_single_service_async(username: str, user_id: int, service: str,
+                                extra_ports: List[Dict] = None,
+                                image_source_id: Optional[int] = None):
     """单独创建 astrbot / napcat / llonebot 容器。napcat 与 llonebot 互斥。"""
     extra_ports = extra_ports or []
     labels = {"astrbot": "AstrBot", "napcat": "NapCat", "llonebot": "LLOneBot"}
     label = labels.get(service, service)
+    registries = resolve_image_registries(image_source_id)
 
     def _run():
         client = get_client()
@@ -1066,7 +1064,8 @@ def create_single_service_async(username: str, user_id: int, service: str, extra
                 _set_progress(username, "正在拉取 AstrBot 镜像...")
                 pull_with_fallback(
                     client, ASTRBOT_IMAGE,
-                    lambda step, detail: _set_progress(username, step or "正在拉取 AstrBot 镜像...", detail)
+                    lambda step, detail: _set_progress(username, step or "正在拉取 AstrBot 镜像...", detail),
+                    registries=registries,
                 )
 
                 _set_progress(username, "正在启动 AstrBot 容器...")
@@ -1096,7 +1095,8 @@ def create_single_service_async(username: str, user_id: int, service: str, extra
                 _set_progress(username, "正在拉取 NapCat 镜像...")
                 pull_with_fallback(
                     client, NAPCAT_IMAGE,
-                    lambda step, detail: _set_progress(username, step or "正在拉取 NapCat 镜像...", detail)
+                    lambda step, detail: _set_progress(username, step or "正在拉取 NapCat 镜像...", detail),
+                    registries=registries,
                 )
                 _run_napcat(client, username, user_id, ports, data_dir, nc_extra)
 
@@ -1110,7 +1110,8 @@ def create_single_service_async(username: str, user_id: int, service: str, extra
                 _set_progress(username, "正在拉取 LLOneBot 镜像...")
                 pull_with_fallback(
                     client, LLONEBOT_IMAGE,
-                    lambda step, detail: _set_progress(username, step or "正在拉取 LLOneBot 镜像...", detail)
+                    lambda step, detail: _set_progress(username, step or "正在拉取 LLOneBot 镜像...", detail),
+                    registries=registries,
                 )
                 _run_llonebot(client, username, user_id, ports, data_dir, ll_extra)
 
@@ -1177,12 +1178,14 @@ def _recreate_containers(client, username: str, user_id: int, extra_ports: List[
         _run_napcat(client, username, user_id, ports, data_dir, nc_extra)
 
 
-def pull_and_recreate(username: str, user_id: int, extra_ports: List[Dict] = None, bot_type: str = "napcat"):
+def pull_and_recreate(username: str, user_id: int, extra_ports: List[Dict] = None,
+                      bot_type: str = "napcat", image_source_id: Optional[int] = None):
     """拉取两个最新镜像并重建容器"""
     key = f"{username}:both"
     extra_ports = extra_ports or []
     bot_label = "LLOneBot" if bot_type == "llonebot" else "NapCat"
     bot_image = LLONEBOT_IMAGE if bot_type == "llonebot" else NAPCAT_IMAGE
+    registries = resolve_image_registries(image_source_id)
 
     def _run():
         client = get_client()
@@ -1191,7 +1194,8 @@ def pull_and_recreate(username: str, user_id: int, extra_ports: List[Dict] = Non
                 _set_pull_progress(key, f"正在拉取 {label} 最新镜像...")
                 pull_with_fallback(
                     client, image,
-                    lambda step, detail, _k=key, _l=label: _set_pull_progress(_k, step or f"正在拉取 {_l} 最新镜像...", detail)
+                    lambda step, detail, _k=key, _l=label: _set_pull_progress(_k, step or f"正在拉取 {_l} 最新镜像...", detail),
+                    registries=registries,
                 )
 
             _set_pull_progress(key, "用新镜像重建容器（停止旧容器 + 启动）...")
@@ -1234,7 +1238,9 @@ def recreate_only(username: str, user_id: int, extra_ports: List[Dict] = None, b
     return task
 
 
-def pull_and_recreate_single(username: str, user_id: int, service: str, extra_ports: List[Dict] = None):
+def pull_and_recreate_single(username: str, user_id: int, service: str,
+                             extra_ports: List[Dict] = None,
+                             image_source_id: Optional[int] = None):
     """仅拉取并重建指定服务容器。napcat 与 llonebot 互斥。"""
     key = f"{username}:{service}"
     extra_ports = extra_ports or []
@@ -1242,6 +1248,7 @@ def pull_and_recreate_single(username: str, user_id: int, service: str, extra_po
     label_map = {"astrbot": "AstrBot", "napcat": "NapCat", "llonebot": "LLOneBot"}
     image = image_map.get(service, NAPCAT_IMAGE)
     label = label_map.get(service, service)
+    registries = resolve_image_registries(image_source_id)
 
     def _run():
         client = get_client()
@@ -1256,7 +1263,8 @@ def pull_and_recreate_single(username: str, user_id: int, service: str, extra_po
             _set_pull_progress(key, f"正在拉取 {label} 最新镜像...")
             pull_with_fallback(
                 client, image,
-                lambda step, detail, _k=key, _l=label: _set_pull_progress(_k, step or f"正在拉取 {_l} 最新镜像...", detail)
+                lambda step, detail, _k=key, _l=label: _set_pull_progress(_k, step or f"正在拉取 {_l} 最新镜像...", detail),
+                registries=registries,
             )
 
             if service == "astrbot":

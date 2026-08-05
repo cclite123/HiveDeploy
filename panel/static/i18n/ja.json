@@ -39,7 +39,8 @@
     "email_templates": "メールテンプレート",
     "announcement_settings": "お知らせ設定",
     "quick_tool_settings": "クイックツール設定",
-    "user_messages": "メッセージ"
+    "user_messages": "メッセージ",
+    "image_management": "Image Management"
   },
   "login": {
     "title": "ログイン — HiveDeploy",
@@ -278,7 +279,9 @@
     "copy_port_addr": "ポートアドレス",
     "copy_token": "トークン",
     "refreshing": "更新中...",
-    "container_logs": "コンテナ: {service}_{user} — 最新 {lines} 行"
+    "container_logs": "コンテナ: {service}_{user} — 最新 {lines} 行",
+    "image_source": "Image download source",
+    "image_source_auto": "Automatic selection (recommended)"
   },
   "profile": {
     "title": "プロフィール設定 — HiveDeploy",
@@ -865,6 +868,9 @@
     "delete": "削除",
     "edit": "編集",
     "create": "作成",
+    "add": "Add",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
     "search": "検索",
     "loading": "読み込み中...",
     "no_data": "データがありません",
@@ -1022,6 +1028,29 @@
     "access": "権限",
     "badge": "バッジ",
     "badge_placeholder": "空欄で非表示"
+  },
+  "admin_images": {
+    "title": "Image Management",
+    "heading": "Image Management",
+    "subtitle": "Manage download sources and safely clean obsolete managed images.",
+    "sources": "Image Sources",
+    "source_hint": "The default source is tried first; a selected source falls back in this order",
+    "name": "Name",
+    "registry_placeholder": "domain[:port][/path prefix]",
+    "order": "Order",
+    "address": "Address",
+    "status": "Status",
+    "actions": "Actions",
+    "default": "Default",
+    "set_default": "Set default",
+    "cleanup": "Safe Image Cleanup",
+    "cleanup_safety": "Only managed project images are handled. Latest and container-referenced images are never deleted.",
+    "auto_cleanup": "Enable daily automatic cleanup",
+    "daily_time": "Daily time (Asia/Shanghai)",
+    "preview": "Preview cleanup",
+    "run_now": "Run now",
+    "timer_warning": "Disable hivedeploy-image-cleanup.timer before enabling this schedule to avoid duplicate jobs.",
+    "latest_run": "Latest run:"
   },
   "theme": {
     "title": "テーマ設定",

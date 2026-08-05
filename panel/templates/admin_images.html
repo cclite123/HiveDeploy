@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title_i18n %}admin_images.title{% endblock %}{% block title %}镜像管理 - HiveDeploy{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+  <div>
+    <h4 class="mb-0 fw-semibold"><i class="bi bi-boxes me-2"></i><span data-i18n="admin_images.heading">镜像管理</span></h4>
+    <p class="text-secondary mb-0 mt-1" style="font-size:.875rem;" data-i18n="admin_images.subtitle">维护下载来源，并安全清理 AstrBot、NapCat 与 LLOneBot 的过时镜像。</p>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span class="fw-semibold" data-i18n="admin_images.sources">镜像源</span>
+    <small class="text-secondary" data-i18n="admin_images.source_hint">默认源优先；指定源失败后按此顺序回退</small>
+  </div>
+  <div class="card-body">
+    <form id="addSourceForm" class="row g-2 mb-3">
+      <div class="col-md-4"><input id="sourceName" class="form-control" maxlength="64" required placeholder="名称" data-i18n-placeholder="admin_images.name"></div>
+      <div class="col-md-6"><input id="sourceRegistry" class="form-control" required placeholder="域名[:端口][/路径前缀]" data-i18n-placeholder="admin_images.registry_placeholder"></div>
+      <div class="col-md-2 d-grid"><button class="btn btn-info text-white"><i class="bi bi-plus-lg me-1"></i><span data-i18n="common.add">添加</span></button></div>
+    </form>
+    <div class="table-responsive">
+      <table class="table table-dark table-hover align-middle mb-0">
+        <thead><tr><th data-i18n="admin_images.order">顺序</th><th data-i18n="admin_images.name">名称</th><th data-i18n="admin_images.address">地址</th><th data-i18n="admin_images.status">状态</th><th data-i18n="admin_images.actions">操作</th></tr></thead>
+        <tbody id="sourceRows">
+        {% for source in sources %}
+          <tr data-source-id="{{ source.id }}">
+            <td class="text-nowrap">
+              <button class="btn btn-sm btn-outline-secondary" onclick="moveSource(this,-1)" title="上移">↑</button>
+              <button class="btn btn-sm btn-outline-secondary" onclick="moveSource(this,1)" title="下移">↓</button>
+            </td>
+            <td><span class="source-name">{{ source.name }}</span>{% if source.is_official %}<span class="badge bg-secondary ms-1">Official</span>{% endif %}{% if source.is_default %}<span class="badge bg-info ms-1" data-i18n="admin_images.default">默认</span>{% endif %}</td>
+            <td><code class="source-registry">{{ source.registry or 'docker.io' }}</code></td>
+            <td>{% if source.enabled %}<span class="text-success" data-i18n="common.enabled">已启用</span>{% else %}<span class="text-secondary" data-i18n="common.disabled">已停用</span>{% endif %}</td>
+            <td class="text-nowrap">
+              {% if not source.is_default %}<button class="btn btn-sm btn-outline-info" onclick="updateSource({{ source.id }},{is_default:true})" data-i18n="admin_images.set_default">设为默认</button>{% endif %}
+              {% if not source.is_official %}
+              <button class="btn btn-sm btn-outline-secondary" onclick="editSource({{ source.id }})" data-i18n="common.edit">编辑</button>
+              <button class="btn btn-sm btn-outline-warning" onclick="updateSource({{ source.id }},{enabled:{{ 'false' if source.enabled else 'true' }}})">{{ '停用' if source.enabled else '启用' }}</button>
+              <button class="btn btn-sm btn-outline-danger" onclick="deleteSource({{ source.id }})" data-i18n="common.delete">删除</button>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><span class="fw-semibold" data-i18n="admin_images.cleanup">安全镜像清理</span></div>
+  <div class="card-body">
+    <div class="alert alert-warning py-2" data-i18n="admin_images.cleanup_safety">只处理三个受管项目；最新镜像和被运行中或已停止容器引用的镜像永不删除。</div>
+    <div class="row g-3 align-items-end mb-3">
+      <div class="col-md-3">
+        <div class="form-check form-switch">
+          <input class="form-check-input" id="cleanupEnabled" type="checkbox" {% if cleanup_enabled %}checked{% endif %}>
+          <label class="form-check-label" for="cleanupEnabled" data-i18n="admin_images.auto_cleanup">启用每日自动清理</label>
+        </div>
+      </div>
+      <div class="col-md-3"><label class="form-label" data-i18n="admin_images.daily_time">每日执行时间（Asia/Shanghai）</label><input id="cleanupTime" type="time" class="form-control" value="{{ cleanup_time }}"></div>
+      <div class="col-md-2 d-grid"><button class="btn btn-outline-info" onclick="saveCleanupSettings()" data-i18n="common.save">保存</button></div>
+      <div class="col-md-2 d-grid"><button class="btn btn-outline-secondary" onclick="previewCleanup()" data-i18n="admin_images.preview">清理前预览</button></div>
+      <div class="col-md-2 d-grid"><button class="btn btn-danger" onclick="runCleanup()" data-i18n="admin_images.run_now">立即执行</button></div>
+    </div>
+    <p class="small text-secondary" data-i18n="admin_images.timer_warning">部署后启用此计划前，请先停用服务器现有 hivedeploy-image-cleanup.timer，避免双重调度。</p>
+    <div id="cleanupResult" class="d-none">
+      <h6 id="cleanupSummary"></h6>
+      <div class="table-responsive"><table class="table table-dark table-sm"><thead><tr><th>服务</th><th>镜像</th><th>大小</th><th>处理</th></tr></thead><tbody id="cleanupRows"></tbody></table></div>
+    </div>
+    {% if latest_cleanup %}
+    <div class="mt-3 small text-secondary">
+      <span data-i18n="admin_images.latest_run">最近执行：</span>{{ latest_cleanup.started_at or '-' }} · {{ latest_cleanup.status }}
+      {% if latest_cleanup.error %} · <span class="text-danger">{{ latest_cleanup.error }}</span>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function api(url, options={}){
+  const response=await fetch(url,{headers:{'Content-Type':'application/json'},...options});
+  const data=await response.json();
+  if(!response.ok)throw new Error(data.detail||data.error||'请求失败');
+  return data;
+}
+document.getElementById('addSourceForm').addEventListener('submit',async event=>{
+  event.preventDefault();
+  try{
+    await api('/api/admin/image_sources',{method:'POST',body:JSON.stringify({name:sourceName.value,registry:sourceRegistry.value})});
+    location.reload();
+  }catch(error){showToast(error.message,'error');}
+});
+async function updateSource(id, patch){try{await api(`/api/admin/image_sources/${id}`,{method:'PUT',body:JSON.stringify(patch)});location.reload();}catch(error){showToast(error.message,'error');}}
+function editSource(id){
+  const row=document.querySelector(`[data-source-id="${id}"]`);
+  const name=prompt('镜像源名称',row.querySelector('.source-name').textContent);
+  if(name===null)return;
+  const registry=prompt('镜像源地址',row.querySelector('.source-registry').textContent);
+  if(registry===null)return;
+  updateSource(id,{name,registry});
+}
+async function deleteSource(id){if(!confirm('确定删除此镜像源？'))return;try{await api(`/api/admin/image_sources/${id}`,{method:'DELETE'});location.reload();}catch(error){showToast(error.message,'error');}}
+async function moveSource(button,direction){
+  const row=button.closest('tr'), sibling=direction<0?row.previousElementSibling:row.nextElementSibling;
+  if(!sibling)return;
+  if(direction<0)row.parentNode.insertBefore(row,sibling);else row.parentNode.insertBefore(sibling,row);
+  const ids=[...document.querySelectorAll('#sourceRows tr')].map(item=>Number(item.dataset.sourceId));
+  try{await api('/api/admin/image_sources/reorder',{method:'POST',body:JSON.stringify({ids})});showToast('排序已保存','success');}catch(error){showToast(error.message,'error');location.reload();}
+}
+async function saveCleanupSettings(){
+  try{await api('/api/admin/images/cleanup/settings',{method:'POST',body:JSON.stringify({enabled:cleanupEnabled.checked,time:cleanupTime.value})});showToast('清理计划已保存','success');}
+  catch(error){showToast(error.message,'error');}
+}
+function fmtSize(bytes){if(bytes>=1073741824)return(bytes/1073741824).toFixed(2)+' GB';return(bytes/1048576).toFixed(1)+' MB';}
+function renderCleanup(data,executed=false){
+  const preview=data.preview||data;
+  cleanupResult.classList.remove('d-none');cleanupRows.replaceChildren();
+  const deleted=new Set((data.deleted||[]).map(item=>item.image_id));
+  const skipped=new Set((data.skipped||[]).map(item=>item.image_id));
+  for(const item of preview.entries||[]){
+    const tr=document.createElement('tr');
+    const action=deleted.has(item.image_id)?'已删除':skipped.has(item.image_id)?'删除前发现新引用，已跳过':item.reason==='latest'?'保留最新':item.reason==='old_but_in_use'?'旧版但正在使用':executed?'保留':'可删除';
+    for(const value of [item.service,(item.tags||[]).join(', ')||item.image_id,fmtSize(item.size),action]){const td=document.createElement('td');td.textContent=value;tr.appendChild(td);}cleanupRows.appendChild(tr);
+  }
+  cleanupSummary.textContent=executed?`删除 ${(data.deleted||[]).length} 个镜像，释放 ${fmtSize(data.released_bytes||0)}`:`发现 ${preview.candidate_count||0} 个可安全删除镜像，共 ${fmtSize(preview.candidate_bytes||0)}`;
+}
+async function previewCleanup(){try{renderCleanup(await api('/api/admin/images/cleanup/preview',{method:'POST'}));}catch(error){showToast(error.message,'error');}}
+async function runCleanup(){if(!confirm('确认立即执行安全镜像清理？'))return;try{const data=await api('/api/admin/images/cleanup/run',{method:'POST'});renderCleanup(data,true);showToast('镜像清理完成','success');}catch(error){showToast(error.message,'error');}}
+</script>
+{% endblock %}

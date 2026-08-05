@@ -103,6 +103,34 @@ class ProgressTask(Base):
     finished_at = Column(DateTime, nullable=True)
 
 
+class ImageSource(Base):
+    """由管理员维护的 Docker Hub 镜像来源。空 registry 代表官方源。"""
+    __tablename__ = "image_sources"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(64), nullable=False)
+    registry = Column(String(256), nullable=False, default="")
+    enabled = Column(Boolean, nullable=False, default=True)
+    priority = Column(Integer, nullable=False, default=0)
+    is_default = Column(Boolean, nullable=False, default=False)
+    is_official = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class ImageCleanupRun(Base):
+    """镜像清理预览和执行结果审计记录。"""
+    __tablename__ = "image_cleanup_runs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    status = Column(String(16), nullable=False, default="running")
+    dry_run = Column(Boolean, nullable=False, default=False)
+    summary_json = Column(Text, default="{}")
+    error = Column(Text, default="")
+    started_at = Column(DateTime, default=datetime.now)
+    finished_at = Column(DateTime, nullable=True)
+
+
 class Announcement(Base):
     """前台公告，多条竖列展示"""
     __tablename__ = "announcements"

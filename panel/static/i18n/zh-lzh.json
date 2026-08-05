@@ -39,7 +39,8 @@
     "email_templates": "书札模板",
     "announcement_settings": "公告設置",
     "quick_tool_settings": "捷具設定",
-    "user_messages": "站內信"
+    "user_messages": "站內信",
+    "image_management": "Image Management"
   },
   "login": {
     "title": "通关文牒 — HiveDeploy",
@@ -278,7 +279,9 @@
     "copy_port_addr": "门户之址",
     "copy_token": "令牌",
     "refreshing": "刷新中...",
-    "container_logs": "容器：{service}_{user} — 近 {lines} 行竹简"
+    "container_logs": "容器：{service}_{user} — 近 {lines} 行竹简",
+    "image_source": "Image download source",
+    "image_source_auto": "Automatic selection (recommended)"
   },
   "profile": {
     "title": "名刺录 — HiveDeploy",
@@ -865,6 +868,9 @@
     "delete": "销毁",
     "edit": "编修",
     "create": "创建",
+    "add": "Add",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
     "search": "搜寻",
     "loading": "查阅中...",
     "no_data": "无数据",
@@ -1022,6 +1028,29 @@
     "access": "權限",
     "badge": "角標",
     "badge_placeholder": "空則不顯"
+  },
+  "admin_images": {
+    "title": "Image Management",
+    "heading": "Image Management",
+    "subtitle": "Manage download sources and safely clean obsolete managed images.",
+    "sources": "Image Sources",
+    "source_hint": "The default source is tried first; a selected source falls back in this order",
+    "name": "Name",
+    "registry_placeholder": "domain[:port][/path prefix]",
+    "order": "Order",
+    "address": "Address",
+    "status": "Status",
+    "actions": "Actions",
+    "default": "Default",
+    "set_default": "Set default",
+    "cleanup": "Safe Image Cleanup",
+    "cleanup_safety": "Only managed project images are handled. Latest and container-referenced images are never deleted.",
+    "auto_cleanup": "Enable daily automatic cleanup",
+    "daily_time": "Daily time (Asia/Shanghai)",
+    "preview": "Preview cleanup",
+    "run_now": "Run now",
+    "timer_warning": "Disable hivedeploy-image-cleanup.timer before enabling this schedule to avoid duplicate jobs.",
+    "latest_run": "Latest run:"
   },
   "theme": {
     "title": "主題",

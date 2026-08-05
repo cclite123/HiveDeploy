@@ -2,6 +2,7 @@ import json
 import re
 import logging
 from datetime import datetime
+from typing import Optional
 
 import docker as docker_lib
 from fastapi import APIRouter, Request, Depends, HTTPException, Body
@@ -10,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from .bootstrap import templates
 from .database import get_db, SessionLocal
-from .models import User, Instance, SiteConfig
+from .models import User, Instance, SiteConfig, ImageSource
 from .auth import get_current_user_from_cookie
 from .docker_manager import (
     create_user_instance_async, get_creation_progress,
@@ -25,6 +26,7 @@ from .docker_manager import (
     configure_napcat_astrbot,
 )
 from .progress_store import TaskAlreadyRunning
+from .image_management import resolve_image_registries, source_to_dict
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -57,7 +59,8 @@ def _tool_allowed(access: str, user: User) -> bool:
 @router.post("/api/instance/create")
 async def create_instance(user: User = Depends(get_current_user_from_cookie),
                           db: Session = Depends(get_db),
-                          bot_type: str = Body("napcat", embed=True)):
+                          bot_type: str = Body("napcat", embed=True),
+                          image_source_id: Optional[int] = Body(None, embed=True)):
     if db.query(Instance).filter_by(user_id=user.id).first():
         return JSONResponse({"error": "实例已存在"})
 
@@ -97,10 +100,14 @@ async def create_instance(user: User = Depends(get_current_user_from_cookie),
     )
     db.add(inst); db.commit()
     try:
-        task = create_user_instance_async(user.username, user.id, _cb, bot_type=bot_type)
+        task = create_user_instance_async(user.username, user.id, _cb, bot_type=bot_type,
+                                          image_source_id=image_source_id)
     except TaskAlreadyRunning as exc:
         db.delete(inst); db.commit()
         return JSONResponse({"ok": False, "error": str(exc), "task": exc.task}, status_code=409)
+    except ValueError as exc:
+        db.delete(inst); db.commit()
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
     return JSONResponse({"ok": True, "task_id": task["task_id"]})
 
 
@@ -174,7 +181,8 @@ async def restart_single(service: str,
 @router.post("/api/instance/create/{service}")
 async def create_single(service: str,
                         user: User = Depends(get_current_user_from_cookie),
-                        db: Session = Depends(get_db)):
+                        db: Session = Depends(get_db),
+                        image_source_id: Optional[int] = Body(None, embed=True)):
     if service not in VALID_SERVICES: raise HTTPException(400)
 
     inst = db.query(Instance).filter_by(user_id=user.id).first()
@@ -182,6 +190,10 @@ async def create_single(service: str,
     if active_task.get("running"):
         return JSONResponse({"ok": False, "error": "已有后台任务正在执行",
                              "task": active_task}, status_code=409)
+    try:
+        resolve_image_registries(image_source_id)
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
     if not inst:
         ports = calc_ports(user.id)
         inst = Instance(
@@ -205,9 +217,12 @@ async def create_single(service: str,
 
     extra_ports = json.loads(inst.extra_ports_json or "[]")
     try:
-        task = create_single_service_async(user.username, user.id, service, extra_ports)
+        task = create_single_service_async(user.username, user.id, service, extra_ports,
+                                           image_source_id=image_source_id)
     except TaskAlreadyRunning as exc:
         return JSONResponse({"ok": False, "error": str(exc), "task": exc.task}, status_code=409)
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
     return JSONResponse({"ok": True, "task_id": task["task_id"]})
 
 
@@ -250,19 +265,27 @@ async def delete_instance(user: User = Depends(get_current_user_from_cookie),
 
 @router.post("/api/instance/update")
 async def update_instance(user: User = Depends(get_current_user_from_cookie),
-                          db: Session = Depends(get_db)):
+                          db: Session = Depends(get_db),
+                          image_source_id: Optional[int] = Body(None, embed=True)):
     inst = db.query(Instance).filter_by(user_id=user.id).first()
     if not inst: return JSONResponse({"error": "实例不存在"})
     active_task = get_current_progress(user.username)
     if active_task.get("running"):
         return JSONResponse({"ok": False, "error": "已有后台任务正在执行",
                              "task": active_task}, status_code=409)
+    try:
+        resolve_image_registries(image_source_id)
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
     extra_ports = json.loads(inst.extra_ports_json or "[]")
     try:
         task = pull_and_recreate(user.username, user.id, extra_ports,
-                                 bot_type=inst.bot_type or "napcat")
+                                 bot_type=inst.bot_type or "napcat",
+                                 image_source_id=image_source_id)
     except TaskAlreadyRunning as exc:
         return JSONResponse({"ok": False, "error": str(exc), "task": exc.task}, status_code=409)
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
     return JSONResponse({"ok": True, "task_id": task["task_id"]})
 
 
@@ -279,7 +302,8 @@ async def current_update_progress(user: User = Depends(get_current_user_from_coo
 @router.post("/api/instance/update/{service}")
 async def update_single(service: str,
                         user: User = Depends(get_current_user_from_cookie),
-                        db: Session = Depends(get_db)):
+                        db: Session = Depends(get_db),
+                        image_source_id: Optional[int] = Body(None, embed=True)):
     if service not in VALID_SERVICES:
         raise HTTPException(400, "无效服务")
     inst = db.query(Instance).filter_by(user_id=user.id).first()
@@ -288,6 +312,10 @@ async def update_single(service: str,
     if active_task.get("running"):
         return JSONResponse({"ok": False, "error": "已有后台任务正在执行",
                              "task": active_task}, status_code=409)
+    try:
+        resolve_image_registries(image_source_id)
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
     extra_ports = json.loads(inst.extra_ports_json or "[]")
     if service in ("napcat", "llonebot"):
         inst.bot_type = service
@@ -297,9 +325,12 @@ async def update_single(service: str,
         inst.extra_ports_json = json.dumps(extra_ports)
         db.commit()
     try:
-        task = pull_and_recreate_single(user.username, user.id, service, extra_ports)
+        task = pull_and_recreate_single(user.username, user.id, service, extra_ports,
+                                        image_source_id=image_source_id)
     except TaskAlreadyRunning as exc:
         return JSONResponse({"ok": False, "error": str(exc), "task": exc.task}, status_code=409)
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
     return JSONResponse({"ok": True, "task_id": task["task_id"]})
 
 
@@ -307,6 +338,16 @@ async def update_single(service: str,
 async def update_single_progress(service: str,
                                   user: User = Depends(get_current_user_from_cookie)):
     return JSONResponse(get_single_pull_progress(user.username, service))
+
+
+@router.get("/api/instance/image_sources")
+async def instance_image_sources(user: User = Depends(get_current_user_from_cookie),
+                                 db: Session = Depends(get_db)):
+    sources = db.query(ImageSource).filter_by(enabled=True).order_by(
+        ImageSource.priority.asc(), ImageSource.id.asc()
+    ).all()
+    sources = sorted(sources, key=lambda item: (not item.is_default, item.priority, item.id))
+    return JSONResponse({"sources": [source_to_dict(item) for item in sources]})
 
 
 @router.post("/api/instance/auto_config")

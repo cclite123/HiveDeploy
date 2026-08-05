@@ -265,6 +265,11 @@ _ensure_site_config("auto_delete_expired_days", "7")
 _ensure_site_config("message_email_copy_default", "false")
 _ensure_site_config("default_astrbot_memory_mb", "1024")
 _ensure_site_config("default_bot_memory_mb", "500")
+_ensure_site_config("image_cleanup_enabled", "false")
+_ensure_site_config("image_cleanup_time", "03:30")
+
+from .image_management import seed_default_image_sources
+seed_default_image_sources()
 
 UPLOAD_DIR = os.environ.get("UPLOAD_DIR", "/app/db/uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -427,3 +432,6 @@ _bootstrap()
 
 from .email_service import start_expiry_scheduler
 start_expiry_scheduler(get_db)
+
+from .image_management import start_image_cleanup_scheduler
+start_image_cleanup_scheduler()
