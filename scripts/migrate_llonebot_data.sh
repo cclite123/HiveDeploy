@@ -12,7 +12,7 @@ if [ -z "${DATA_ROOT:-}" ]; then
 fi
 DATA_ROOT="${DATA_ROOT:-/data/instances}"
 
-containers="$(docker ps -a --format '{{.Names}}' | awk '/^llonebot_/')"
+containers="$(docker ps -a --format '{{.Names}}|{{.Image}}' | awk -F'|' '$1 ~ /^llonebot_/ && tolower($2) ~ /llonebot/ {print $1}')"
 if [ -z "${containers}" ]; then
   echo "No LLOneBot containers found."
   exit 0

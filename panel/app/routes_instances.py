@@ -460,7 +460,11 @@ async def get_napcat_token(user: User = Depends(get_current_user_from_cookie),
         client = docker_lib.from_env()
         container = client.containers.get(container_name)
         if bot_type == "llonebot":
-            result = container.exec_run(["sh", "-lc", "cat /root/llonebot/data/auth_token.txt 2>/dev/null"])
+            result = container.exec_run([
+                "sh", "-lc",
+                "for p in /root/llonebot/data/auth_token.txt /root/llonebot/data/webui_token.txt; "
+                "do [ -s \"$p\" ] && cat \"$p\" && exit 0; done; exit 1",
+            ])
             if result.exit_code == 0:
                 token = result.output.decode("utf-8", errors="ignore").strip()
                 if token:
