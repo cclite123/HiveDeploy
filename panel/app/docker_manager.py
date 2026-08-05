@@ -1,4 +1,5 @@
 import docker
+import copy
 import os
 import json
 import logging
@@ -562,6 +563,48 @@ def _configure_llonebot_connection(config: Dict[str, Any], ws_url: str,
     return config
 
 
+def _write_persistent_json(username: str, service: str, container_path: str,
+                           config: Dict[str, Any]) -> str:
+    """在服务停止后原子写入其持久卷，避免退出钩子用旧配置覆盖新值。"""
+    normalized = container_path.replace("\\", "/")
+    service_root = os.path.abspath(os.path.join(DATA_DIR, username, service))
+    if service == "astrbot":
+        destination = os.path.join(service_root, "cmd_config.json")
+    elif service == "llonebot":
+        destination = os.path.join(service_root, ".llonebot-data", os.path.basename(normalized))
+    elif service == "napcat":
+        if normalized.startswith("/root/.config/QQ/"):
+            relative = normalized[len("/root/.config/QQ/"):]
+        elif normalized.startswith("/app/napcat/config/"):
+            relative = os.path.join("config", normalized[len("/app/napcat/config/"):])
+        else:
+            raise ValueError(f"NapCat 配置不在持久化目录中：{container_path}")
+        destination = os.path.join(service_root, relative)
+    else:
+        raise ValueError(f"不支持的持久化服务：{service}")
+
+    destination = os.path.abspath(destination)
+    if destination != service_root and not destination.startswith(service_root + os.sep):
+        raise ValueError("配置路径超出持久化目录")
+    os.makedirs(os.path.dirname(destination), exist_ok=True)
+    mode = (os.stat(destination).st_mode & 0o777) if os.path.exists(destination) else 0o600
+    temporary = f"{destination}.hivedeploy-{secrets.token_hex(4)}.tmp"
+    try:
+        with open(temporary, "x", encoding="utf-8") as config_file:
+            json.dump(config, config_file, ensure_ascii=False, indent=2)
+            config_file.flush()
+            os.fsync(config_file.fileno())
+        os.chmod(temporary, mode)
+        os.replace(temporary, destination)
+    finally:
+        try:
+            if os.path.exists(temporary):
+                os.remove(temporary)
+        except OSError:
+            pass
+    return destination
+
+
 def configure_bot_astrbot(username: str, bot_type: str, ws_url: str) -> Dict[str, Any]:
     if bot_type not in ("napcat", "llonebot"):
         return {"ok": False, "error": "不支持的 Bot 类型"}
@@ -624,19 +667,51 @@ done
     if not isinstance(bot_config, dict):
         return {"ok": False, "error": f"{bot_label} 账号配置格式无效"}
 
+    original_astrbot_config = copy.deepcopy(astrbot_config)
+    original_bot_config = copy.deepcopy(bot_config)
     _configure_astrbot_platform(astrbot_config, token)
     if bot_type == "llonebot":
         _configure_llonebot_connection(bot_config, ws_url, token)
     else:
         _configure_napcat_connection(bot_config, ws_url, token)
+    stopped = []
     try:
-        _write_container_json(bot_container, bot_config_path, bot_config)
-        _write_container_json(astrbot_container, astrbot_config_path, astrbot_config)
+        astrbot_container.stop(timeout=20)
+        stopped.append(astrbot_container)
+        bot_container.stop(timeout=20)
+        stopped.append(bot_container)
     except Exception as exc:
+        for container in stopped:
+            try:
+                container.start()
+            except Exception:
+                pass
+        return {"ok": False, "error": f"停止容器以保存配置失败：{exc}"}
+
+    try:
+        _write_persistent_json(username, bot_type, bot_config_path, bot_config)
+        _write_persistent_json(username, "astrbot", astrbot_config_path, astrbot_config)
+    except Exception as exc:
+        for service, path, original in (
+            (bot_type, bot_config_path, original_bot_config),
+            ("astrbot", astrbot_config_path, original_astrbot_config),
+        ):
+            try:
+                _write_persistent_json(username, service, path, original)
+            except Exception:
+                logger.exception("[%s] 回退 %s 一键连接配置失败", username, service)
+        for container in stopped:
+            try:
+                container.start()
+            except Exception:
+                pass
         return {"ok": False, "error": f"写入连接配置失败：{exc}"}
 
-    restart_user_instance(username, "astrbot")
-    restart_user_instance(username, bot_type)
+    try:
+        astrbot_container.start()
+        bot_container.start()
+    except Exception as exc:
+        return {"ok": False, "error": f"配置已保存，但重新启动容器失败：{exc}"}
     return {
         "ok": True,
         "ws_url": ws_url,
