@@ -592,7 +592,9 @@ find /app/napcat /root/.config/QQ -name 'onebot11_*.json' -type f 2>/dev/null
 ''')
     else:
         bot_config_paths = _find_container_files(bot_container, r'''
-find /root/llonebot/data -maxdepth 1 -name 'config_*.json' -type f 2>/dev/null
+for p in /root/llonebot/data/config_*.json; do
+  [ -f "$p" ] && echo "$p"
+done
 ''')
     if not astrbot_config_path:
         return {"ok": False, "error": "未在 AstrBot 容器内找到 cmd_config.json，请先启动一次 AstrBot"}

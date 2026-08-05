@@ -55,6 +55,29 @@ class ConnectionConfigTests(unittest.TestCase):
                 self.assertIn(expected, result["error"])
                 write.assert_not_called()
 
+    def test_llonebot_account_discovery_does_not_require_find_binary(self):
+        astrbot = object()
+        llonebot = object()
+        containers = SimpleNamespace(get=lambda name: astrbot if name.startswith("astrbot_") else llonebot)
+        discovery_commands = []
+
+        def discover(_container, command):
+            discovery_commands.append(command)
+            return ["/root/llonebot/data/config_123.json"]
+
+        with patch.object(docker_manager, "get_instance_status", return_value={"astrbot": "running", "llonebot": "running"}), \
+                patch.object(docker_manager, "get_client", return_value=SimpleNamespace(containers=containers)), \
+                patch.object(docker_manager, "_find_container_file", return_value="/AstrBot/data/cmd_config.json"), \
+                patch.object(docker_manager, "_find_container_files", side_effect=discover), \
+                patch.object(docker_manager, "_read_container_json", side_effect=[{}, {"ob11": {}}]), \
+                patch.object(docker_manager, "_write_container_json"), \
+                patch.object(docker_manager, "restart_user_instance"):
+            result = docker_manager.configure_bot_astrbot("alice", "llonebot", "ws://host/ws")
+
+        self.assertTrue(result["ok"])
+        self.assertIn("for p in /root/llonebot/data/config_*.json", discovery_commands[0])
+        self.assertNotIn("find /root/llonebot/data", discovery_commands[0])
+
     def test_llonebot_mounts_real_data_directory(self):
         captured = {}
 
