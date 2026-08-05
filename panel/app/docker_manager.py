@@ -876,8 +876,30 @@ def _run_llonebot(client, username: str, user_id: int, ports: Dict, data_dir: st
     llonebot_data_dir = os.path.join(llonebot_dir, ".llonebot-data")
     os.makedirs(llonebot_dir, exist_ok=True)
     os.makedirs(llonebot_data_dir, exist_ok=True)
-    llonebot_ports = {"3080/tcp": ports["napcat_web"]}
+
+    # 部分既有部署由独立反向代理占用 WebUI 宿主端口。代理存在时仅暴露
+    # 容器网络端口，避免重建阶段与 llonebot_web_proxy_<username> 冲突。
+    has_web_proxy = False
+    try:
+        client.containers.get(f"llonebot_web_proxy_{username}")
+        has_web_proxy = True
+    except Exception:
+        pass
+    llonebot_ports = {} if has_web_proxy else {"3080/tcp": ports["napcat_web"]}
     llonebot_ports.update(ll_extra)
+
+    environment = {**{"WEBUI_PORT": "3080"}, **_TZ_ENV}
+    auth_token_path = os.path.join(llonebot_data_dir, "auth_token.txt")
+    try:
+        with open(auth_token_path, "r", encoding="utf-8") as auth_file:
+            auth_token = auth_file.read().strip()
+        if auth_token:
+            environment["AUTH_TOKEN"] = auth_token
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        logger.warning("[%s] 无法读取持久化 LLOneBot auth_token：%s", username, exc)
+
     return client.containers.run(
         LLONEBOT_IMAGE, name=f"llonebot_{username}",
         network=BOT_NETWORK, hostname=f"llonebot_{username}",
@@ -886,7 +908,7 @@ def _run_llonebot(client, username: str, user_id: int, ports: Dict, data_dir: st
             llonebot_dir: {"bind": "/root/.config/QQ", "mode": "rw"},
             llonebot_data_dir: {"bind": "/root/llonebot/data", "mode": "rw"},
         }, **_TZ_VOL},
-        environment={**{"WEBUI_PORT": "3080"}, **_TZ_ENV},
+        environment=environment,
         labels=_traefik_labels(username, "llonebot", 3080),
         detach=True, restart_policy={"Name": "unless-stopped"},
         **_container_resource_kwargs(user_id, "llonebot"),

@@ -73,6 +73,34 @@ class ConnectionConfigTests(unittest.TestCase):
             self.assertEqual("/root/llonebot/data", captured["volumes"][persistent]["bind"])
             self.assertTrue(os.path.isdir(persistent))
 
+    def test_llonebot_uses_persisted_auth_and_existing_web_proxy(self):
+        captured = {}
+
+        class Containers:
+            def get(self, name):
+                self.last_get = name
+                return SimpleNamespace(status="running")
+
+            def run(self, *args, **kwargs):
+                captured.update(kwargs)
+                return SimpleNamespace(id="container")
+
+        containers = Containers()
+        with tempfile.TemporaryDirectory() as data_dir, \
+                patch.object(docker_manager, "_container_resource_kwargs", return_value={}):
+            persistent = os.path.join(data_dir, "llonebot", ".llonebot-data")
+            os.makedirs(persistent)
+            with open(os.path.join(persistent, "auth_token.txt"), "w", encoding="utf-8") as auth_file:
+                auth_file.write("persisted-auth")
+            docker_manager._run_llonebot(
+                SimpleNamespace(containers=containers), "alice", 1,
+                {"napcat_web": 20001}, data_dir, {},
+            )
+
+        self.assertEqual("llonebot_web_proxy_alice", containers.last_get)
+        self.assertEqual({}, captured["ports"])
+        self.assertEqual("persisted-auth", captured["environment"]["AUTH_TOKEN"])
+
 
 if __name__ == "__main__":
     unittest.main()
