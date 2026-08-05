@@ -2,6 +2,8 @@
 
 基于 **AstrBot + NapCat / LLOneBot + Docker** 的共享机器人框架托管平台，支持多用户独立实例、Web 管理面板，自动端口分配。每个用户拥有一套独立的 AstrBot + QQ Bot 容器环境。
 
+完整变更记录见 [CHANGELOG.md](CHANGELOG.md)。
+
 ---
 
 ## 📋 功能特性
@@ -23,6 +25,7 @@
 -   🌐 **镜像源管理** — 管理员维护、排序和设置默认源，用户可手动选择并自动回退
 -   🧹 **安全镜像清理** — 只清理三类受管旧镜像，任何容器引用的镜像绝不删除
 -   🔗 **一键连接** — 自动配置 AstrBot 与 NapCat 或 LLOneBot 的反向 WebSocket、共享 Token、自身消息上报和调试开关
+-   🧭 **按部署显示工具** — 日志、终端和文件入口只显示当前实例实际部署的服务
 
 ---
 
@@ -79,6 +82,8 @@ bash scripts/setup.sh
 
 完成后访问 `http://你的IP/` 可查看公开首页，账号登录入口为 `/login`。
 
+公开首页会根据站点名称、注册开关和最大用户数动态显示入口；已有登录会话可直接进入 `/dashboard`。
+
 ---
 
 ## ⚙️ 环境变量说明（.env）
@@ -110,6 +115,38 @@ bash scripts/setup.sh
 
 ---
 
+## 🧭 公开首页
+
+-   根域名 `/` 展示产品首页，介绍实例编排、一键连接、任务进度和安全运维能力。
+-   `/login` 保持为账号登录入口，`/dashboard` 为登录后的控制台。
+-   首页注册按钮会遵守后台的注册开关和最大用户数限制。
+-   页面支持桌面与移动端导航、滚动动画和系统“减少动态效果”设置。
+
+---
+
+## 🔄 持久任务与镜像操作
+
+-   创建、更新、Bot 切换和端口重建进度写入数据库，刷新页面后会恢复同一任务，不会重复执行操作。
+-   面板重启后，失去后台线程的任务会明确标记为“已中断”。
+-   同一账号只允许一个镜像或重建任务运行，避免并发操作互相覆盖。
+-   管理员可在 **镜像管理** 中新增、排序、启停镜像源并设置默认来源；Docker Hub 官方源始终保留。
+-   用户可选择自动模式或指定来源。指定来源失败后，仍会按管理员顺序继续回退。
+-   清理器只处理 AstrBot、NapCat 和 LLOneBot 镜像，并保护最新镜像以及被任意运行中或已停止容器引用的镜像。
+
+---
+
+## 🔗 一键连接与 LLOneBot 持久化
+
+-   一键连接会根据实例当前 Bot 类型自动选择 NapCat 或 LLOneBot，并配置 AstrBot 的单个 `aiocqhttp` 反向 WebSocket 平台。
+-   AstrBot 与当前 QQ Bot 使用同一个随机 Token；NapCat/LLOneBot 同时开启自身消息上报和调试。
+-   必须先完成扫码登录并且只能发现一个账号配置；缺少配置或存在多个账号时会停止并提示。
+-   配置在容器停止后原子写入持久目录，失败时会尝试恢复原配置。
+-   LLOneBot 的 `/root/llonebot/data` 已持久化，账号配置、授权文件、`auth_token.txt`/`webui_token.txt` 和连接配置可跨重建保留。
+-   面板不再预写无效的 `config/llonebot.json`，而是读取扫码登录生成的真实 `config_<QQ号>.json`。
+-   重建时会复用已保存的 WebUI Token；仅有一个账号配置时自动恢复对应 QQ 登录。
+
+---
+
 ## 📖 使用流程
 
 ### 管理员
@@ -134,8 +171,8 @@ bash scripts/setup.sh
     -   使用 **一键配置** 自动完成 AstrBot 与当前 NapCat / LLOneBot 的反向 WebSocket 连接，并开启自身消息上报和调试
     -   管理 **弹性端口**（额外映射 7 个自定义端口）
     -   查看实时系统资源（CPU / 内存 / 磁盘）
-    -   管理容器文件（浏览 / 编辑 / 上传）
-    -   打开 **Web 终端** 直接操作容器
+    -   管理当前已部署服务的容器文件（浏览 / 编辑 / 上传）
+    -   打开当前已部署服务的 **日志** 或 **Web 终端**
     -   拉取最新镜像更新实例
     -   自助续期（如管理员开启）
 
@@ -148,8 +185,8 @@ bash scripts/setup.sh
 将证书文件复制到 `traefik/certs/` 目录：
 
 ```bash
-cp 你的证书.crt traefik/certs/cert.pem
-cp 你的私钥.key traefik/certs/key.pem
+cp 你的证书.crt traefik/certs/fullchain.crt
+cp 你的私钥.key traefik/certs/private.pem
 ```
 
 > 宝塔面板证书通常在 `/www/server/panel/vhost/cert/你的域名/` 下，`fullchain.pem` 为证书，`privkey.pem` 为私钥。
@@ -213,7 +250,7 @@ DRY_RUN=0 bash scripts/migrate_llonebot_data.sh
 ### 镜像自动清理切换说明
 
 网页端清理计划默认关闭。若服务器上已有旧的 systemd 清理任务，部署新版后应先执行
-`systemctl disable --now hivedeploy-image-cleanup.timer`，确认旧调度已停止，再在“管理后台 → 镜像管理”中开启每日清理，避免同一时间重复执行。
+`systemctl disable --now hivedeploy-image-cleanup.timer`，确认旧调度已停止并移除旧 service、timer 和脚本，再在“管理后台 → 镜像管理”中开启每日清理，避免同一时间重复执行。
 
 清理器不会使用 `docker image prune -a`，不会处理未知项目镜像、容器或卷；每类保留最新镜像，并在删除前再次检查运行中和已停止容器的引用。
 
@@ -240,7 +277,7 @@ A: 在服务器上执行 `bash scripts/reset_admin.sh`，选择管理员账号�
 A: 修改 `.env` 中的 `INSTANCE_PORT_BASE`，例如改为 `30000`，并确保防火墙对应开放。
 
 **Q: NapCat 扫码后连接不上 AstrBot？**
-A: 点击仪表板中的 **「一键配置」**，面板会自动配置 AstrBot 与 NapCat 的正向 WebSocket 连接。
+A: 点击快捷工具中的 **「一键配置连接」**。面板会自动配置 AstrBot 与当前 NapCat/LLOneBot 的反向 WebSocket、共享 Token、自身消息上报和调试。若提示未找到或存在多个账号配置，请先确认扫码登录只生成了一个账号配置。
 
 **Q: 如何彻底重置某用户实例？**
 A: 在管理后台删除用户后，数据目录保留在 `/data/instances/用户名/`，重新创建用户并创建实例即可复用数据（或手动删除该目录彻底清除）。
@@ -275,24 +312,30 @@ HiveDeploy/
 │   │   ├── database.py       # SQLAlchemy 数据库连接
 │   │   ├── models.py         # 数据模型（用户、实例、配置等）
 │   │   ├── docker_manager.py # Docker 容器编排（创建/启停/端口管理）
+│   │   ├── progress_store.py # 可跨页面恢复的后台任务进度
+│   │   ├── image_management.py # 镜像源排序、安全清理和定时计划
+│   │   ├── service_access.py # 当前实例服务访问控制
 │   │   ├── email_service.py  # 邮件发送与到期提醒
 │   │   ├── hub_sync.py       # 多节点 Hub 同步
 │   │   ├── filemanager.py    # 容器文件管理
 │   │   ├── routes_auth.py    # 认证路由（登录/注册/密码重置）
 │   │   ├── routes_user.py    # 用户路由（仪表板/续期/统计）
 │   │   ├── routes_instances.py # 实例管理路由
+│   │   ├── routes_images.py  # 镜像源与清理管理路由
 │   │   ├── routes_files.py   # 文件管理路由
 │   │   ├── routes_admin.py   # 管理后台路由
 │   │   ├── routes_invites.py # 邀请码路由
 │   │   ├── routes_nodes.py   # 服务器节点路由
 │   │   └── routes_terminal.py# Web 终端路由
-│   ├── templates/            # Jinja2 前端模板
-│   └── static/               # 静态资源
+│   ├── templates/            # Jinja2 前端模板（含公开首页）
+│   ├── static/               # 静态资源
+│   └── tests/                # 任务、镜像、连接和入口回归测试
 ├── traefik/                  # Traefik 配置
 │   ├── tls.yml               # TLS 证书配置
 │   └── certs/                # 证书文件目录
 ├── scripts/                  # 运维脚本
 │   ├── setup.sh              # 部署向导
 │   ├── backup.sh             # 数据备份
-│   └── reset_admin.sh        # 管理员密码重置
-└── docs/                     # 前端文档页面
+│   ├── reset_admin.sh        # 管理员密码重置
+│   └── migrate_llonebot_data.sh # 现有 LLOneBot 数据迁移
+└── CHANGELOG.md              # 完整更新日志
