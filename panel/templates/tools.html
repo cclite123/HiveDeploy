@@ -117,7 +117,7 @@
             <span class="badge bg-{{ status_badge(container_status.get('astrbot', 'unknown')) }}">AstrBot {{ container_status.get('astrbot', 'unknown') }}</span>
             <span class="badge bg-{{ status_badge(container_status.get(active_bot_type, 'unknown')) }}">{{ active_bot_label }} {{ container_status.get(active_bot_type, 'unknown') }}</span>
           </div>
-          <div class="text-secondary" style="font-size:.82rem;" data-i18n="tools.auto_config_desc_short" data-i18n-params='{"bot_type":"{{ active_bot_label }}"}'>自动写入 AstrBot 与 {{ active_bot_label }} 反向 WebSocket 配置并重启容器。</div>
+          <div class="text-secondary" style="font-size:.82rem;" data-i18n="tools.auto_config_desc_short" data-i18n-params='{"bot_type":"{{ active_bot_label }}"}'>自动写入 AstrBot 与 {{ active_bot_label }} 反向 WebSocket 配置，开启自身消息上报和调试并重启容器。</div>
           {% if auto_config_access == 'vip' and not user_is_vip %}
           <div class="text-info mt-1" style="font-size:.78rem;"><i class="bi bi-lock me-1"></i><span data-i18n="tools.vip_required">该快捷工具当前仅限 VIP 用户使用。</span></div>
           {% elif not instance %}
@@ -167,7 +167,7 @@ async function autoConfigBot(){
   const btn=document.getElementById('autoConfigBtn');
   if(!btn)return;
   const botLabel='{{ active_bot_label }}';
-  const confirmText=(window.__i18n?window.__i18n('tools.auto_config_confirm','将覆写 AstrBot 与 {bot_type} 的反向 WebSocket 配置，并重启两个容器使配置生效。确定继续？'):'将覆写 AstrBot 与 {bot_type} 的反向 WebSocket 配置，并重启两个容器使配置生效。确定继续？').replace('{bot_type}',botLabel);
+  const confirmText=(window.__i18n?window.__i18n('tools.auto_config_confirm','将覆写 AstrBot 与 {bot_type} 的反向 WebSocket 配置，开启自身消息上报和调试，并重启两个容器使配置生效。确定继续？'):'将覆写 AstrBot 与 {bot_type} 的反向 WebSocket 配置，开启自身消息上报和调试，并重启两个容器使配置生效。确定继续？').replace('{bot_type}',botLabel);
   if(!confirm(confirmText))return;
   const old=btn.innerHTML;
   btn.disabled=true;
@@ -176,7 +176,7 @@ async function autoConfigBot(){
     const resp=await fetch('/api/instance/auto_config',{method:'POST'});
     const data=await resp.json();
     if(data.ok){
-      alert((window.__i18n?window.__i18n('tools.auto_config_success','配置完成，已重启 AstrBot 与 {bot_type}。\nWS 地址：{ws_url}'):'配置完成，已重启 AstrBot 与 {bot_type}。\nWS 地址：{ws_url}').replace('{bot_type}',botLabel).replace('{ws_url}',data.ws_url||''));
+      alert((window.__i18n?window.__i18n('tools.auto_config_success','配置完成，已开启自身消息上报和调试，并重启 AstrBot 与 {bot_type}。\nWS 地址：{ws_url}'):'配置完成，已开启自身消息上报和调试，并重启 AstrBot 与 {bot_type}。\nWS 地址：{ws_url}').replace('{bot_type}',botLabel).replace('{ws_url}',data.ws_url||''));
     }else{
       alert(data.error || (window.__i18n ? window.__i18n('tools.auto_config_failed', '配置失败') : '配置失败'));
     }

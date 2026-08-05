@@ -22,7 +22,7 @@
 -   🔄 **持久任务进度** — 创建、更新、切换 Bot 和端口重建进度可跨页面刷新恢复
 -   🌐 **镜像源管理** — 管理员维护、排序和设置默认源，用户可手动选择并自动回退
 -   🧹 **安全镜像清理** — 只清理三类受管旧镜像，任何容器引用的镜像绝不删除
--   🔗 **一键连接** — 自动配置 AstrBot 与 NapCat 或 LLOneBot 的反向 WebSocket 和共享 Token
+-   🔗 **一键连接** — 自动配置 AstrBot 与 NapCat 或 LLOneBot 的反向 WebSocket、共享 Token、自身消息上报和调试开关
 
 ---
 
@@ -131,7 +131,7 @@ bash scripts/setup.sh
 4.  实例创建后可以：
     -   打开 **AstrBot WebUI** 配置 AI 模型和插件
     -   打开 **NapCat / LLOneBot WebUI** 扫码登录 QQ
-    -   使用 **一键配置** 自动完成 AstrBot 与当前 NapCat / LLOneBot 的反向 WebSocket 连接
+    -   使用 **一键配置** 自动完成 AstrBot 与当前 NapCat / LLOneBot 的反向 WebSocket 连接，并开启自身消息上报和调试
     -   管理 **弹性端口**（额外映射 7 个自定义端口）
     -   查看实时系统资源（CPU / 内存 / 磁盘）
     -   管理容器文件（浏览 / 编辑 / 上传）

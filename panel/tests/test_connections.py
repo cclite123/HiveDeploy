@@ -29,6 +29,8 @@ class ConnectionConfigTests(unittest.TestCase):
         self.assertEqual("ws://example.com:20002/ws", connection["url"])
         self.assertEqual(token, connection["token"])
         self.assertEqual(60000, connection["heartInterval"])
+        self.assertTrue(connection["reportSelfMessage"])
+        self.assertTrue(connection["debug"])
 
     def test_napcat_connection_still_uses_one_reverse_client(self):
         config = docker_manager._configure_napcat_connection(
@@ -39,6 +41,8 @@ class ConnectionConfigTests(unittest.TestCase):
         clients = config["network"]["websocketClients"]
         self.assertEqual(1, len(clients))
         self.assertEqual("token", clients[0]["token"])
+        self.assertTrue(clients[0]["reportSelfMessage"])
+        self.assertTrue(clients[0]["debug"])
 
     def test_missing_or_ambiguous_account_configuration_stops_without_writing(self):
         client = SimpleNamespace(containers=SimpleNamespace(get=lambda _: object()))
