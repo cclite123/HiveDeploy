@@ -67,16 +67,16 @@
     </p>
   </div>
   <div class="terminal-actions d-flex align-items-center gap-2">
-    <span id="connStatus" class="conn-badge bg-warning" data-i18n="terminal.connecting">连接中...</span>
+    <span id="connStatus" class="conn-badge bg-warning" data-connection-state="connecting">连接中...</span>
+    {% set active_bot_type = (user.instance.bot_type or 'napcat') if user.instance else none %}
     {% if service == 'astrbot' %}
+    {% if active_bot_type == 'napcat' %}
     <a href="/terminal/napcat" class="btn btn-sm btn-outline-secondary"><span data-i18n="terminal.switch_to" data-i18n-params='{"service":"NapCat"}'>切换到 NapCat</span></a>
+    {% elif active_bot_type == 'llonebot' %}
     <a href="/terminal/llonebot" class="btn btn-sm btn-outline-secondary"><span data-i18n="terminal.switch_to" data-i18n-params='{"service":"LLOneBot"}'>切换到 LLOneBot</span></a>
-    {% elif service == 'napcat' %}
-    <a href="/terminal/astrbot" class="btn btn-sm btn-outline-secondary"><span data-i18n="terminal.switch_to" data-i18n-params='{"service":"AstrBot"}'>切换到 AstrBot</span></a>
-    <a href="/terminal/llonebot" class="btn btn-sm btn-outline-secondary"><span data-i18n="terminal.switch_to" data-i18n-params='{"service":"LLOneBot"}'>切换到 LLOneBot</span></a>
+    {% endif %}
     {% else %}
     <a href="/terminal/astrbot" class="btn btn-sm btn-outline-secondary"><span data-i18n="terminal.switch_to" data-i18n-params='{"service":"AstrBot"}'>切换到 AstrBot</span></a>
-    <a href="/terminal/napcat" class="btn btn-sm btn-outline-secondary"><span data-i18n="terminal.switch_to" data-i18n-params='{"service":"NapCat"}'>切换到 NapCat</span></a>
     {% endif %}
     <button class="btn btn-sm btn-outline-info" onclick="reconnect()">
       <i class="bi bi-arrow-clockwise me-1"></i><span data-i18n="terminal.reconnect">重连</span>
@@ -101,6 +101,26 @@ function __i(key, fallback) {
   if (window.__i18n) return window.__i18n(key, fallback);
   return fallback;
 }
+
+const CONNECTION_STATES = {
+  connecting: { css: 'bg-warning', key: 'terminal.connecting', fallback: '连接中...' },
+  connected: { css: 'bg-success', key: 'terminal.connected', fallback: '已连接' },
+  disconnected: { css: 'bg-danger', key: 'terminal.disconnected', fallback: '已断开' },
+  error: { css: 'bg-danger', key: 'terminal.connection_error', fallback: '连接错误' },
+};
+
+function setConnectionStatus(state) {
+  const status = CONNECTION_STATES[state] || CONNECTION_STATES.error;
+  const element = document.getElementById('connStatus');
+  element.dataset.connectionState = state;
+  element.className = `conn-badge ${status.css}`;
+  element.textContent = __i(status.key, status.fallback);
+}
+
+document.addEventListener('hive:i18n-change', () => {
+  const state = document.getElementById('connStatus').dataset.connectionState || 'connecting';
+  setConnectionStatus(state);
+});
 
 
 function initTerm() {
@@ -140,16 +160,18 @@ function sendResize() {
 
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}/ws/terminal/${SERVICE}`);
-  ws.binaryType = 'arraybuffer';
+  const socket = new WebSocket(`${proto}://${location.host}/ws/terminal/${SERVICE}`);
+  ws = socket;
+  socket.binaryType = 'arraybuffer';
 
-  ws.onopen = () => {
-    document.getElementById('connStatus').className = 'conn-badge bg-success';
-    document.getElementById('connStatus').textContent = __i('terminal.connected', '已连接');
+  socket.onopen = () => {
+    if (ws !== socket) return;
+    setConnectionStatus('connected');
     sendResize();
   };
 
-  ws.onmessage = e => {
+  socket.onmessage = e => {
+    if (ws !== socket) return;
     if (e.data instanceof ArrayBuffer) {
       term.write(new Uint8Array(e.data));
     } else {
@@ -157,27 +179,31 @@ function connect() {
     }
   };
 
-  ws.onclose = () => {
-    document.getElementById('connStatus').className = 'conn-badge bg-danger';
-    document.getElementById('connStatus').textContent = __i('terminal.disconnected', '已断开');
+  socket.onclose = () => {
+    if (ws !== socket) return;
+    setConnectionStatus('disconnected');
     term.writeln('\r\n\x1b[31m' + __i('terminal.reconnect_hint', '连接已断开。点击重连按钮重新连接。') + '\x1b[0m');
   };
 
-  ws.onerror = () => {
-    document.getElementById('connStatus').className = 'conn-badge bg-danger';
-    document.getElementById('connStatus').textContent = __i('terminal.connection_error', '连接错误');
+  socket.onerror = () => {
+    if (ws !== socket) return;
+    setConnectionStatus('error');
   };
 }
 
 function reconnect() {
-  if (ws) { try { ws.close(); } catch(e){} }
+  if (ws) {
+    ws.onclose = null;
+    ws.onerror = null;
+    try { ws.close(); } catch(e){}
+  }
   term.clear();
-  document.getElementById('connStatus').className = 'conn-badge bg-warning';
-  document.getElementById('connStatus').textContent = __i('terminal.connecting', '连接中...');
+  setConnectionStatus('connecting');
   connect();
 }
 
 initTerm();
+setConnectionStatus('connecting');
 connect();
 </script>
 {% endblock %}

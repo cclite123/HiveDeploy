@@ -6,13 +6,14 @@ import logging
 import docker as docker_lib
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
-from fastapi import Request, Depends, HTTPException
+from fastapi import Request, Depends
 from jose import jwt, JWTError
 
 from .bootstrap import app, templates
 from .auth import get_current_user_from_cookie, SECRET_KEY, ALGORITHM
 from .models import User
 from .filemanager import get_terminal_root
+from .service_access import ensure_instance_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -21,8 +22,7 @@ router = APIRouter()
 @router.get("/terminal/{service}", response_class=HTMLResponse)
 async def terminal_page(service: str, request: Request,
                         user: User = Depends(get_current_user_from_cookie)):
-    if service not in ("astrbot", "napcat", "llonebot"):
-        raise HTTPException(404)
+    ensure_instance_service(user, service)
     return templates.TemplateResponse(request, "terminal.html",
         {"user": user, "service": service})
 

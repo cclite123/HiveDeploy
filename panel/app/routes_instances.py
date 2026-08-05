@@ -27,6 +27,7 @@ from .docker_manager import (
 )
 from .progress_store import TaskAlreadyRunning
 from .image_management import resolve_image_registries, source_to_dict
+from .service_access import ensure_instance_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -482,8 +483,7 @@ async def get_napcat_token(user: User = Depends(get_current_user_from_cookie),
 @router.get("/logs/{service}", response_class=HTMLResponse)
 async def view_logs(service: str, request: Request,
                     user: User = Depends(get_current_user_from_cookie)):
-    if service not in VALID_SERVICES:
-        raise HTTPException(404)
+    ensure_instance_service(user, service)
     logs = get_container_logs(user.username, service, 200)
     return templates.TemplateResponse(request, "logs.html",
         {"user": user, "service": service, "logs": logs})
@@ -492,7 +492,6 @@ async def view_logs(service: str, request: Request,
 @router.get("/api/logs/{service}")
 async def api_logs(service: str, lines: int = 200,
                    user: User = Depends(get_current_user_from_cookie)):
-    if service not in VALID_SERVICES:
-        raise HTTPException(404)
+    ensure_instance_service(user, service)
     lines = max(20, min(lines, 1000))
     return JSONResponse({"ok": True, "logs": get_container_logs(user.username, service, lines)})

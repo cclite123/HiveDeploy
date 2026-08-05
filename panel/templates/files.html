@@ -675,16 +675,6 @@ html[data-theme="light"] .fm-upload-progress {
       {% endif %}
     </a>
     {% endfor %}
-    <div class="fm-sidebar-title mt-2"><span data-i18n="files.cross_service">跨服务跳转</span></div>
-    {% if service == 'astrbot' %}
-    <a class="sc-btn" href="/files/napcat?path={{ napcat_root }}">
-      <i class="bi bi-arrow-right-circle"></i><span data-i18n="files.open_napcat">打开 NapCat</span>
-    </a>
-    {% else %}
-    <a class="sc-btn" href="/files/astrbot?path={{ astrbot_root }}">
-      <i class="bi bi-arrow-right-circle"></i><span data-i18n="files.open_astrbot">打开 AstrBot</span>
-    </a>
-    {% endif %}
   </div>
 
   <!-- 右侧主区域 -->

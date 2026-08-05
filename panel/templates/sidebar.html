@@ -5,35 +5,48 @@
   <li><a href="/tools" class="nav-link {{ 'active' if request.url.path == '/tools' else '' }}">
     <i class="bi bi-tools me-2"></i><span data-i18n="sidebar.quick_tools">快捷工具</span>
   </a></li>
+  {% set active_instance = user.instance %}
+  {% set active_bot_type = (active_instance.bot_type or 'napcat') if active_instance else none %}
+  {% if active_instance %}
   <li class="mt-2 px-2"><small class="text-secondary text-uppercase" style="font-size:.7rem;" data-i18n="sidebar.logs_terminal">日志 & 终端</small></li>
   <li><a href="/logs/astrbot" class="nav-link {{ 'active' if '/logs/astrbot' in request.url.path else '' }}">
     <i class="bi bi-terminal me-2"></i><span data-i18n="sidebar.astrbot_logs">AstrBot 日志</span>
   </a></li>
+  {% if active_bot_type == 'napcat' %}
   <li><a href="/logs/napcat" class="nav-link {{ 'active' if '/logs/napcat' in request.url.path else '' }}">
     <i class="bi bi-terminal me-2"></i><span data-i18n="sidebar.napcat_logs">NapCat 日志</span>
   </a></li>
+  {% elif active_bot_type == 'llonebot' %}
   <li><a href="/logs/llonebot" class="nav-link {{ 'active' if '/logs/llonebot' in request.url.path else '' }}">
     <i class="bi bi-terminal me-2"></i><span data-i18n="sidebar.llonebot_logs">LLOneBot 日志</span>
   </a></li>
+  {% endif %}
   <li><a href="/terminal/astrbot" class="nav-link {{ 'active' if '/terminal/astrbot' in request.url.path else '' }}">
     <i class="bi bi-code-square me-2"></i><span data-i18n="sidebar.astrbot_terminal">AstrBot 终端</span>
   </a></li>
+  {% if active_bot_type == 'napcat' %}
   <li><a href="/terminal/napcat" class="nav-link {{ 'active' if '/terminal/napcat' in request.url.path else '' }}">
     <i class="bi bi-code-square me-2"></i><span data-i18n="sidebar.napcat_terminal">NapCat 终端</span>
   </a></li>
+  {% elif active_bot_type == 'llonebot' %}
   <li><a href="/terminal/llonebot" class="nav-link {{ 'active' if '/terminal/llonebot' in request.url.path else '' }}">
     <i class="bi bi-code-square me-2"></i><span data-i18n="sidebar.llonebot_terminal">LLOneBot 终端</span>
   </a></li>
+  {% endif %}
   <li class="mt-2 px-2"><small class="text-secondary text-uppercase" style="font-size:.7rem;" data-i18n="sidebar.file_management">文件管理</small></li>
   <li><a href="/files/astrbot" class="nav-link {{ 'active' if '/files/astrbot' in request.url.path else '' }}">
     <i class="bi bi-folder2 me-2"></i><span data-i18n="sidebar.astrbot_files">AstrBot 文件</span>
   </a></li>
+  {% if active_bot_type == 'napcat' %}
   <li><a href="/files/napcat" class="nav-link {{ 'active' if '/files/napcat' in request.url.path else '' }}">
     <i class="bi bi-folder2 me-2"></i><span data-i18n="sidebar.napcat_files">NapCat 文件</span>
   </a></li>
+  {% elif active_bot_type == 'llonebot' %}
   <li><a href="/files/llonebot" class="nav-link {{ 'active' if '/files/llonebot' in request.url.path else '' }}">
     <i class="bi bi-folder2 me-2"></i><span data-i18n="sidebar.llonebot_files">LLOneBot 文件</span>
   </a></li>
+  {% endif %}
+  {% endif %}
   <li class="mt-2 px-2"><small class="text-secondary text-uppercase" style="font-size:.7rem;" data-i18n="sidebar.account">账号</small></li>
   <li><a href="/profile" class="nav-link {{ 'active' if request.url.path == '/profile' else '' }}">
     <i class="bi bi-person-gear me-2"></i><span data-i18n="sidebar.profile">个人设置</span>

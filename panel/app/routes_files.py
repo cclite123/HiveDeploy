@@ -9,6 +9,7 @@ from .bootstrap import templates
 from .database import get_db
 from .models import User
 from .auth import get_current_user_from_cookie
+from .service_access import ensure_instance_service
 from .filemanager import (
     list_dir, read_file, write_file, delete_path, make_dir,
     get_shortcuts, get_root, is_text_file,
@@ -29,8 +30,7 @@ router = APIRouter()
 async def files_page(service: str, request: Request, path: str = None,
                      saved: bool = False,
                      user: User = Depends(get_current_user_from_cookie)):
-    if service not in ("astrbot", "napcat", "llonebot"):
-        raise HTTPException(404)
+    ensure_instance_service(user, service)
     root      = get_root(service)
     path      = path or root
     if service == "napcat" and path == "/app/config":
@@ -110,6 +110,7 @@ async def files_page(service: str, request: Request, path: str = None,
 @router.post("/files/{service}/save")
 async def save_file(service: str, path: str = Form(...), content: str = Form(...),
                     user: User = Depends(get_current_user_from_cookie)):
+    ensure_instance_service(user, service)
     result = write_file(user.username, service, path, content)
     if result["error"]:
         return RedirectResponse(f"/files/{service}?path={path}&error={result['error']}", 302)
@@ -120,6 +121,7 @@ async def save_file(service: str, path: str = Form(...), content: str = Form(...
 async def delete_file(service: str, path: str = Form(...),
                       return_path: str = Form("/"),
                       user: User = Depends(get_current_user_from_cookie)):
+    ensure_instance_service(user, service)
     delete_path(user.username, service, path)
     return RedirectResponse(f"/files/{service}?path={return_path}", 302)
 
@@ -128,6 +130,7 @@ async def delete_file(service: str, path: str = Form(...),
 async def mkdir(service: str, base_path: str = Form(...),
                 dirname: str = Form(...), return_path: str = Form("/"),
                 user: User = Depends(get_current_user_from_cookie)):
+    ensure_instance_service(user, service)
     new_path = (base_path.rstrip("/") + "/" + dirname).replace("//", "/")
     make_dir(user.username, service, new_path)
     return RedirectResponse(f"/files/{service}?path={return_path}", 302)
@@ -137,6 +140,7 @@ async def mkdir(service: str, base_path: str = Form(...),
 async def create_file(service: str, base_path: str = Form(...),
                       filename: str = Form(...), content: str = Form(""),
                       user: User = Depends(get_current_user_from_cookie)):
+    ensure_instance_service(user, service)
     name = filename.strip().replace("\\", "/").split("/")[-1]
     if not name:
         return JSONResponse({"ok": False, "error": "文件名不能为空"})
@@ -152,6 +156,7 @@ async def create_file(service: str, base_path: str = Form(...),
 @router.get("/files/{service}/download")
 async def download(service: str, path: str,
                    user: User = Depends(get_current_user_from_cookie)):
+    ensure_instance_service(user, service)
     result = download_file(user.username, service, path)
     if result["error"]:
         raise HTTPException(400, result["error"])
@@ -168,6 +173,7 @@ async def download(service: str, path: str,
 async def upload(service: str, upload_path: str = Form(...),
                  file: UploadFile = File(...),
                  user: User = Depends(get_current_user_from_cookie)):
+    ensure_instance_service(user, service)
     data   = await file.read()
     result = upload_file(user.username, service, upload_path, file.filename, data)
     if result["error"]:
@@ -178,6 +184,7 @@ async def upload(service: str, upload_path: str = Form(...),
 @router.post("/files/{service}/move")
 async def move_file(service: str, request: Request,
                     user: User = Depends(get_current_user_from_cookie)):
+    ensure_instance_service(user, service)
     body = await request.json()
     result = move_path(user.username, service, body["src"], body["dst"])
     return JSONResponse({"ok": not result["error"], "error": result["error"]})
@@ -186,6 +193,7 @@ async def move_file(service: str, request: Request,
 @router.post("/files/{service}/copy")
 async def copy_file(service: str, request: Request,
                     user: User = Depends(get_current_user_from_cookie)):
+    ensure_instance_service(user, service)
     body = await request.json()
     result = copy_path(user.username, service, body["src"], body["dst"])
     return JSONResponse({"ok": not result["error"], "error": result["error"]})
@@ -194,6 +202,7 @@ async def copy_file(service: str, request: Request,
 @router.post("/files/{service}/rename")
 async def rename_file(service: str, src: str = Form(...), dst: str = Form(...),
                       user: User = Depends(get_current_user_from_cookie)):
+    ensure_instance_service(user, service)
     result = rename_path(user.username, service, src, dst)
     if result["error"]:
         return JSONResponse({"error": result["error"]}, status_code=400)
@@ -204,6 +213,7 @@ async def rename_file(service: str, src: str = Form(...), dst: str = Form(...),
 async def extract_file(service: str, path: str = Form(...),
                        dest_dir: str = Form(...),
                        user: User = Depends(get_current_user_from_cookie)):
+    ensure_instance_service(user, service)
     result = extract_archive(user.username, service, path, dest_dir)
     return JSONResponse({"ok": not result["error"], "error": result["error"]})
 
@@ -212,6 +222,7 @@ async def extract_file(service: str, path: str = Form(...),
 async def compress_file(service: str, src: str = Form(...),
                         dest_zip: str = Form(...),
                         user: User = Depends(get_current_user_from_cookie)):
+    ensure_instance_service(user, service)
     result = compress_path(user.username, service, src, dest_zip)
     return JSONResponse({"ok": not result["error"], "error": result["error"]})
 
@@ -219,6 +230,7 @@ async def compress_file(service: str, src: str = Form(...),
 @router.get("/files/{service}/preview")
 async def preview_file(service: str, path: str,
                        user: User = Depends(get_current_user_from_cookie)):
+    ensure_instance_service(user, service)
     result = download_file(user.username, service, path)
     if result["error"]:
         raise HTTPException(400, result["error"])
@@ -241,6 +253,7 @@ async def preview_file(service: str, path: str,
 @router.get("/files/{service}/info")
 async def file_info(service: str, path: str,
                     user: User = Depends(get_current_user_from_cookie)):
+    ensure_instance_service(user, service)
     result = get_file_info(user.username, service, path)
     if result.get("error"):
         return JSONResponse({"ok": False, "error": result["error"]})

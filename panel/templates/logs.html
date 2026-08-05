@@ -15,26 +15,20 @@
     </p>
   </div>
   <div class="d-flex gap-2 flex-wrap">
+    {% set active_bot_type = (user.instance.bot_type or 'napcat') if user.instance else none %}
     {% if service == 'astrbot' %}
+    {% if active_bot_type == 'napcat' %}
     <a href="/logs/napcat" class="btn btn-sm btn-outline-info btn-action">
       <i class="bi bi-arrow-left-right me-1"></i><span data-i18n="logs.switch_to" data-i18n-params='{"service":"NapCat"}'>切换到 NapCat</span>
     </a>
+    {% elif active_bot_type == 'llonebot' %}
     <a href="/logs/llonebot" class="btn btn-sm btn-outline-info btn-action">
       <i class="bi bi-arrow-left-right me-1"></i><span data-i18n="logs.switch_to" data-i18n-params='{"service":"LLOneBot"}'>切换到 LLOneBot</span>
     </a>
-    {% elif service == 'napcat' %}
-    <a href="/logs/astrbot" class="btn btn-sm btn-outline-info btn-action">
-      <i class="bi bi-arrow-left-right me-1"></i><span data-i18n="logs.switch_to" data-i18n-params='{"service":"AstrBot"}'>切换到 AstrBot</span>
-    </a>
-    <a href="/logs/llonebot" class="btn btn-sm btn-outline-info btn-action">
-      <i class="bi bi-arrow-left-right me-1"></i><span data-i18n="logs.switch_to" data-i18n-params='{"service":"LLOneBot"}'>切换到 LLOneBot</span>
-    </a>
+    {% endif %}
     {% else %}
     <a href="/logs/astrbot" class="btn btn-sm btn-outline-info btn-action">
       <i class="bi bi-arrow-left-right me-1"></i><span data-i18n="logs.switch_to" data-i18n-params='{"service":"AstrBot"}'>切换到 AstrBot</span>
-    </a>
-    <a href="/logs/napcat" class="btn btn-sm btn-outline-info btn-action">
-      <i class="bi bi-arrow-left-right me-1"></i><span data-i18n="logs.switch_to" data-i18n-params='{"service":"NapCat"}'>切换到 NapCat</span>
     </a>
     {% endif %}
     <button onclick="refreshLogs()" class="btn btn-sm btn-outline-primary btn-action">
