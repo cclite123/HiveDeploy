@@ -66,8 +66,33 @@ def add_calendar_month(dt: datetime) -> datetime:
 #  Dashboard
 # ════════════════════════════════════════════════════════════
 @router.get("/", response_class=HTMLResponse)
-async def root():
-    return RedirectResponse("/dashboard")
+async def root(request: Request, db: Session = Depends(get_db)):
+    """Public product landing page.
+
+    Authentication deliberately stays on ``/login`` so the platform can present
+    itself before asking visitors for credentials.  The registration CTA mirrors
+    the same availability rules as the registration page.
+    """
+    site_name_cfg = db.query(SiteConfig).filter_by(key="site_name").first()
+    registration_cfg = db.query(SiteConfig).filter_by(key="registration_open").first()
+    max_users_cfg = db.query(SiteConfig).filter_by(key="max_users").first()
+
+    site_name = (site_name_cfg.value or "HiveDeploy").strip() if site_name_cfg else "HiveDeploy"
+    registration_open = not registration_cfg or registration_cfg.value == "true"
+    try:
+        max_users = int(max_users_cfg.value or "0") if max_users_cfg else 0
+    except (TypeError, ValueError):
+        max_users = 0
+    current_users = db.query(User).count()
+    registration_available = registration_open and (max_users <= 0 or current_users < max_users)
+
+    response = templates.TemplateResponse(request, "landing.html", {
+        "site_name": site_name,
+        "registration_available": registration_available,
+        "has_session": bool(request.cookies.get("access_token")),
+    })
+    response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 @router.get("/dashboard", response_class=HTMLResponse)

@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="{{ site_name }} — 一站式部署和管理 AstrBot、NapCat 与 LLOneBot。">
+  <meta name="theme-color" content="#f4f3ef">
+  <title>{{ site_name }} — 让机器人部署更简单</title>
+  <script>document.documentElement.classList.add('js');</script>
+  <link rel="stylesheet" href="/static/css/landing.css?v=20260805">
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到主要内容</a>
+
+  <header class="site-header" id="siteHeader">
+    <a class="brand" href="/" aria-label="{{ site_name }} 首页">
+      <svg class="brand-mark" viewBox="0 0 40 40" aria-hidden="true">
+        <path d="M20 2.8 34.8 11.4v17.2L20 37.2 5.2 28.6V11.4Z" fill="currentColor"/>
+        <path d="M12.2 14.2 20 9.7l7.8 4.5v9L20 27.7l-7.8-4.5Z" fill="#f4f3ef"/>
+        <circle cx="20" cy="31.2" r="2.2" fill="#f4f3ef"/>
+      </svg>
+      <span>{{ site_name }}</span>
+    </a>
+
+    <nav class="desktop-nav" aria-label="主要导航">
+      <a href="#capabilities">能力</a>
+      <a href="#workflow">使用流程</a>
+      <a href="#operations">运维</a>
+      <a href="https://github.com/cclite123/HiveDeploy" target="_blank" rel="noreferrer">GitHub</a>
+    </nav>
+
+    <div class="header-actions">
+      <a class="text-link desktop-action" href="/login">登录</a>
+      <a class="button button-small button-dark" href="{% if has_session %}/dashboard{% else %}/login{% endif %}">
+        {% if has_session %}进入控制台{% else %}打开控制台{% endif %}
+        <span aria-hidden="true">↗</span>
+      </a>
+      <button class="menu-toggle" id="menuToggle" type="button" aria-expanded="false" aria-controls="mobileNav" aria-label="打开导航">
+        <span></span><span></span>
+      </button>
+    </div>
+  </header>
+
+  <nav class="mobile-nav" id="mobileNav" aria-label="移动端导航" hidden>
+    <a href="#capabilities">能力</a>
+    <a href="#workflow">使用流程</a>
+    <a href="#operations">运维</a>
+    <a href="https://github.com/cclite123/HiveDeploy" target="_blank" rel="noreferrer">GitHub</a>
+    <a href="/login">登录</a>
+  </nav>
+
+  <main id="main">
+    <section class="hero section-shell">
+      <div class="hero-orbit orbit-one" aria-hidden="true"></div>
+      <div class="hero-orbit orbit-two" aria-hidden="true"></div>
+      <div class="hero-copy reveal">
+        <p class="eyebrow"><span></span> BOT INFRASTRUCTURE, SIMPLIFIED</p>
+        <h1>机器人，从部署到在线，<br><em>只差一次点击。</em></h1>
+        <p class="hero-lead">为每一位用户创建独立的 AstrBot + QQ Bot 环境。容器编排、端口分配、连接配置和日常运维，都交给 HiveDeploy。</p>
+        <div class="hero-actions">
+          {% if registration_available %}
+          <a class="button button-dark" href="/register">免费开始 <span aria-hidden="true">→</span></a>
+          {% else %}
+          <a class="button button-dark" href="/login">登录已有账号 <span aria-hidden="true">→</span></a>
+          {% endif %}
+          <a class="button button-ghost" href="#capabilities">了解平台</a>
+        </div>
+        <p class="hero-note"><span class="live-dot"></span> 面板在线 · 每位用户数据独立持久化</p>
+      </div>
+
+      <div class="product-stage reveal" data-delay="120" aria-label="HiveDeploy 控制台界面示意">
+        <div class="stage-glow"></div>
+        <div class="mock-window">
+          <div class="mock-topbar">
+            <div class="mock-dots"><i></i><i></i><i></i></div>
+            <div class="mock-address"><span class="lock-symbol">◇</span> console.hive.local/dashboard</div>
+            <div class="mock-avatar">H</div>
+          </div>
+          <div class="mock-body">
+            <aside class="mock-sidebar">
+              <div class="mock-logo"><span>⬡</span> Hive</div>
+              <div class="mock-nav active"><i></i><span>控制台</span></div>
+              <div class="mock-nav"><i></i><span>快捷工具</span></div>
+              <div class="mock-nav"><i></i><span>日志 &amp; 终端</span></div>
+              <div class="mock-nav"><i></i><span>文件管理</span></div>
+              <div class="mock-nav bottom"><i></i><span>个人设置</span></div>
+            </aside>
+            <div class="mock-content">
+              <div class="mock-heading-row">
+                <div><small>WELCOME BACK</small><h2>实例控制台</h2></div>
+                <button type="button">更新实例</button>
+              </div>
+              <div class="service-grid">
+                <article class="service-card">
+                  <div class="service-title"><span class="service-icon astr">A</span><div><b>AstrBot</b><small>AI BOT FRAMEWORK</small></div></div>
+                  <div class="service-state"><span></span> 运行中</div>
+                  <div class="meter"><i style="width: 42%"></i></div>
+                  <div class="service-meta"><span>CPU 4.2%</span><span>MEM 318 MB</span></div>
+                </article>
+                <article class="service-card">
+                  <div class="service-title"><span class="service-icon qq">Q</span><div><b>QQ Bot</b><small>NAPCAT / LLONEBOT</small></div></div>
+                  <div class="service-state"><span></span> 已连接</div>
+                  <div class="connection-line"><i></i><span></span><i></i></div>
+                  <div class="service-meta"><span>WebSocket</span><span>Token secured</span></div>
+                </article>
+              </div>
+              <div class="activity-card">
+                <div class="activity-head"><b>部署活动</b><span>实时</span></div>
+                <div class="activity-row"><i class="success">✓</i><span><b>连接配置已同步</b><small>AstrBot ↔ LLOneBot</small></span><time>刚刚</time></div>
+                <div class="activity-row"><i>↓</i><span><b>镜像更新完成</b><small>任务进度已持久化</small></span><time>2 分钟前</time></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="floating-chip chip-left"><span>✓</span><div><small>AUTO CONFIG</small><b>一键连接成功</b></div></div>
+        <div class="floating-chip chip-right"><span>↻</span><div><small>BACKGROUND TASK</small><b>刷新后继续显示</b></div></div>
+      </div>
+    </section>
+
+    <section class="manifesto section-shell reveal">
+      <p class="section-index">01 / WHY HIVEDEPLOY</p>
+      <h2>把复杂留给平台，<br>把创造还给你。</h2>
+      <p>不再逐个维护容器、端口和配置文件。HiveDeploy 把一整套机器人基础设施，收进一个清晰、可靠的工作台。</p>
+    </section>
+
+    <section class="capabilities section-shell" id="capabilities">
+      <div class="section-heading reveal">
+        <div><p class="section-index">02 / CAPABILITIES</p><h2>从第一分钟开始，<br>一切都在掌控之中。</h2></div>
+        <p>平台围绕真实的部署流程设计：创建、登录、连接、更新和维护，每一步都有明确反馈。</p>
+      </div>
+
+      <div class="feature-grid">
+        <article class="feature-card feature-large reveal">
+          <div class="feature-number">01</div>
+          <div class="feature-copy"><p class="feature-kicker">ONE-CLICK ORCHESTRATION</p><h3>选择组合，立即拥有独立环境。</h3><p>AstrBot 与 NapCat 或 LLOneBot 自动编排，端口自动分配，配置和数据独立持久化。</p></div>
+          <div class="combo-visual" aria-hidden="true">
+            <div class="combo-node node-main"><span>A</span><b>AstrBot</b><small>AI FRAMEWORK</small></div>
+            <div class="combo-path"><i></i><em>Reverse WebSocket</em><i></i></div>
+            <div class="combo-stack"><div class="combo-node"><span>N</span><b>NapCat</b></div><div class="or-label">OR</div><div class="combo-node"><span>L</span><b>LLOneBot</b></div></div>
+          </div>
+        </article>
+
+        <article class="feature-card reveal" data-delay="80">
+          <div class="feature-number">02</div>
+          <div class="progress-visual" aria-hidden="true">
+            <div class="progress-top"><span>正在更新实例</span><b>76%</b></div>
+            <div class="progress-track"><i></i></div>
+            <div class="progress-step done"><span>✓</span>获取镜像清单</div>
+            <div class="progress-step active"><span></span>下载镜像层 4 / 6</div>
+            <div class="progress-step"><span></span>重建并恢复服务</div>
+          </div>
+          <div class="feature-copy"><p class="feature-kicker">PERSISTENT PROGRESS</p><h3>刷新页面，进度不会消失。</h3><p>后台任务写入数据库。关闭页面再回来，仍能看到同一个任务的实时步骤和最终结果。</p></div>
+        </article>
+
+        <article class="feature-card feature-dark reveal" data-delay="160">
+          <div class="feature-number">03</div>
+          <div class="shield-visual" aria-hidden="true"><div class="shield-ring ring-a"></div><div class="shield-ring ring-b"></div><div class="shield-core">◇</div><span class="shield-tag tag-a">引用检查</span><span class="shield-tag tag-b">安全保留</span></div>
+          <div class="feature-copy"><p class="feature-kicker">SAFE OPERATIONS</p><h3>可以自动清理，也可以绝对放心。</h3><p>只处理受管镜像；运行中或已停止容器正在引用的版本，永远不会被删除。</p></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="workflow section-shell" id="workflow">
+      <div class="workflow-intro reveal"><p class="section-index">03 / WORKFLOW</p><h2>三步，让机器人真正在线。</h2></div>
+      <ol class="workflow-list">
+        <li class="reveal"><span class="step-no">01</span><div><h3>创建实例</h3><p>选择 NapCat 或 LLOneBot，平台自动创建 AstrBot 与当前 QQ Bot 组合。</p></div><i aria-hidden="true">↗</i></li>
+        <li class="reveal" data-delay="70"><span class="step-no">02</span><div><h3>扫码登录</h3><p>进入 QQ Bot WebUI 完成扫码，账号配置自动写入持久化目录。</p></div><i aria-hidden="true">↗</i></li>
+        <li class="reveal" data-delay="140"><span class="step-no">03</span><div><h3>一键连接</h3><p>共享 Token 与反向 WebSocket 自动配置，AstrBot 和当前 Bot 随即建立连接。</p></div><i aria-hidden="true">↗</i></li>
+      </ol>
+    </section>
+
+    <section class="operations" id="operations">
+      <div class="operations-inner section-shell">
+        <div class="operations-copy reveal">
+          <p class="section-index light">04 / OPERATIONS</p>
+          <h2>面向今天部署，<br>也面向长期运行。</h2>
+          <p>管理员可以维护镜像源与回退顺序、预览清理候选项、设置每日清理计划。所有操作先考虑在线实例，再考虑磁盘空间。</p>
+          <a class="button button-light" href="{% if has_session %}/dashboard{% else %}/login{% endif %}">进入管理面板 <span aria-hidden="true">→</span></a>
+        </div>
+        <div class="terminal-visual reveal" data-delay="100" aria-label="安全镜像清理执行示意">
+          <div class="terminal-head"><span></span><span></span><span></span><b>IMAGE OPERATIONS</b></div>
+          <div class="terminal-body">
+            <p><em>$</em> hive image cleanup --preview</p>
+            <p class="muted">Scanning managed images...</p>
+            <p><span class="term-ok">KEEP</span> astrbot:latest <small>latest local image</small></p>
+            <p><span class="term-ok">KEEP</span> llonebot:8.1.5 <small>referenced by container</small></p>
+            <p><span class="term-warn">READY</span> napcat:old <small>unreferenced · 628 MB</small></p>
+            <p class="cursor-line"><em>›</em> Safety check complete<span class="cursor"></span></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="closing section-shell reveal">
+      <p class="eyebrow"><span></span> READY WHEN YOU ARE</p>
+      <h2>让部署结束，<br><em>让创造开始。</em></h2>
+      <p>你的下一套机器人环境，不必从命令行和配置文件开始。</p>
+      <div class="hero-actions">
+        {% if registration_available %}<a class="button button-dark" href="/register">创建我的实例 <span aria-hidden="true">→</span></a>{% endif %}
+        <a class="button button-ghost" href="/login">登录控制台</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer section-shell">
+    <a class="brand footer-brand" href="/">
+      <svg class="brand-mark" viewBox="0 0 40 40" aria-hidden="true"><path d="M20 2.8 34.8 11.4v17.2L20 37.2 5.2 28.6V11.4Z" fill="currentColor"/><path d="M12.2 14.2 20 9.7l7.8 4.5v9L20 27.7l-7.8-4.5Z" fill="#f4f3ef"/><circle cx="20" cy="31.2" r="2.2" fill="#f4f3ef"/></svg>
+      <span>{{ site_name }}</span>
+    </a>
+    <p>AstrBot + NapCat / LLOneBot 多租户机器人托管平台</p>
+    <div class="footer-links"><a href="/login">登录</a>{% if registration_available %}<a href="/register">注册</a>{% endif %}<a href="https://github.com/cclite123/HiveDeploy" target="_blank" rel="noreferrer">GitHub</a></div>
+    <small>© <span id="currentYear">2026</span> {{ site_name }}. Built for reliable bot operations.</small>
+  </footer>
+
+  <script src="/static/js/landing.js?v=20260805" defer></script>
+</body>
+</html>
