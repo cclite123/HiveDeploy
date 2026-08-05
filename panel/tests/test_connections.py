@@ -166,6 +166,8 @@ class ConnectionConfigTests(unittest.TestCase):
             os.makedirs(persistent)
             with open(os.path.join(persistent, "auth_token.txt"), "w", encoding="utf-8") as auth_file:
                 auth_file.write("persisted-auth")
+            with open(os.path.join(persistent, "config_123456.json"), "w", encoding="utf-8") as account_file:
+                account_file.write("{}")
             docker_manager._run_llonebot(
                 SimpleNamespace(containers=containers), "alice", 1,
                 {"napcat_web": 20001}, data_dir, {},
@@ -174,6 +176,7 @@ class ConnectionConfigTests(unittest.TestCase):
         self.assertEqual("llonebot_web_proxy_alice", containers.last_get)
         self.assertEqual({}, captured["ports"])
         self.assertEqual("persisted-auth", captured["environment"]["AUTH_TOKEN"])
+        self.assertEqual("123456", captured["environment"]["QUICK_LOGIN_QQ"])
 
 
 if __name__ == "__main__":

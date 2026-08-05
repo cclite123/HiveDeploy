@@ -977,6 +977,15 @@ def _run_llonebot(client, username: str, user_id: int, ports: Dict, data_dir: st
     except OSError as exc:
         logger.warning("[%s] 无法读取持久化 LLOneBot auth_token：%s", username, exc)
 
+    account_configs = glob.glob(os.path.join(llonebot_data_dir, "config_*.json"))
+    account_ids = []
+    for config_path in account_configs:
+        match = re.fullmatch(r"config_(\d+)\.json", os.path.basename(config_path))
+        if match:
+            account_ids.append(match.group(1))
+    if len(account_ids) == 1:
+        environment["QUICK_LOGIN_QQ"] = account_ids[0]
+
     return client.containers.run(
         LLONEBOT_IMAGE, name=f"llonebot_{username}",
         network=BOT_NETWORK, hostname=f"llonebot_{username}",
