@@ -23,7 +23,7 @@ from .docker_manager import (
     get_current_progress,
     create_single_service_async, detect_public_ip,
     check_port_conflicts, get_affected_services, stop_affected_services, recreate_services,
-    configure_napcat_astrbot,
+    configure_bot_astrbot,
 )
 from .progress_store import TaskAlreadyRunning
 from .image_management import resolve_image_registries, source_to_dict
@@ -359,8 +359,7 @@ async def auto_config_instance(user: User = Depends(get_current_user_from_cookie
     inst = db.query(Instance).filter_by(user_id=user.id).first()
     if not inst:
         return JSONResponse({"ok": False, "error": "实例不存在"})
-    if (inst.bot_type or "napcat") != "napcat":
-        return JSONResponse({"ok": False, "error": "一键配置仅支持 NapCat，LLOneBot 暂不支持"})
+    bot_type = inst.bot_type or "napcat"
 
     ws_port = inst.astrbot_ws_port
     try:
@@ -373,7 +372,7 @@ async def auto_config_instance(user: User = Depends(get_current_user_from_cookie
 
     public_host = (detect_public_ip() or "").replace("https://", "").replace("http://", "").split("/")[0]
     ws_url = f"ws://{public_host}:{ws_port}/ws"
-    return JSONResponse(configure_napcat_astrbot(user.username, ws_url))
+    return JSONResponse(configure_bot_astrbot(user.username, bot_type, ws_url))
 
 
 # 弹性端口
@@ -460,6 +459,12 @@ async def get_napcat_token(user: User = Depends(get_current_user_from_cookie),
     try:
         client = docker_lib.from_env()
         container = client.containers.get(container_name)
+        if bot_type == "llonebot":
+            result = container.exec_run(["sh", "-lc", "cat /root/llonebot/data/auth_token.txt 2>/dev/null"])
+            if result.exit_code == 0:
+                token = result.output.decode("utf-8", errors="ignore").strip()
+                if token:
+                    return JSONResponse({"token": token})
         logs = container.logs(stream=False, timestamps=False)
         text = logs.decode("utf-8", errors="replace")
         matches = re.findall(r'WebUi Token:\s*([a-f0-9]+)', text, re.IGNORECASE)

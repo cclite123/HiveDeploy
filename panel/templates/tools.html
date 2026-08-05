@@ -55,6 +55,8 @@
 </div>
 
 <div class="tool-list">
+  {% set active_bot_type = (instance.bot_type or 'napcat') if instance else 'napcat' %}
+  {% set active_bot_label = 'LLOneBot' if active_bot_type == 'llonebot' else 'NapCat' %}
   <div class="card tool-card-compact">
     <div class="card-body">
       <div class="tool-row">
@@ -113,21 +115,19 @@
             <span class="badge bg-success"><i class="bi bi-unlock me-1"></i><span data-i18n="tools.free">免费</span></span>
             {% endif %}
             <span class="badge bg-{{ status_badge(container_status.get('astrbot', 'unknown')) }}">AstrBot {{ container_status.get('astrbot', 'unknown') }}</span>
-            <span class="badge bg-{{ status_badge(container_status.get('napcat', 'unknown')) }}">NapCat {{ container_status.get('napcat', 'unknown') }}</span>
+            <span class="badge bg-{{ status_badge(container_status.get(active_bot_type, 'unknown')) }}">{{ active_bot_label }} {{ container_status.get(active_bot_type, 'unknown') }}</span>
           </div>
-          <div class="text-secondary" style="font-size:.82rem;" data-i18n="tools.auto_config_desc_short">自动写入 AstrBot 与 NapCat 反向 WebSocket 配置并重启容器。</div>
+          <div class="text-secondary" style="font-size:.82rem;" data-i18n="tools.auto_config_desc_short" data-i18n-params='{"bot_type":"{{ active_bot_label }}"}'>自动写入 AstrBot 与 {{ active_bot_label }} 反向 WebSocket 配置并重启容器。</div>
           {% if auto_config_access == 'vip' and not user_is_vip %}
           <div class="text-info mt-1" style="font-size:.78rem;"><i class="bi bi-lock me-1"></i><span data-i18n="tools.vip_required">该快捷工具当前仅限 VIP 用户使用。</span></div>
           {% elif not instance %}
           <div class="text-secondary mt-1" style="font-size:.78rem;" data-i18n="tools.no_instance">当前账号还没有实例，无法使用快捷工具。</div>
-          {% elif (instance.bot_type or 'napcat') != 'napcat' %}
-          <div class="text-secondary mt-1" style="font-size:.78rem;" data-i18n="tools.auto_config_napcat_only">一键配置仅支持 NapCat。</div>
-          {% elif container_status.get('astrbot') != 'running' or container_status.get('napcat') != 'running' %}
-          <div class="text-secondary mt-1" style="font-size:.78rem;" data-i18n="tools.auto_config_not_ready">请先确认 AstrBot 与 NapCat 容器均在运行。</div>
+          {% elif container_status.get('astrbot') != 'running' or container_status.get(active_bot_type) != 'running' %}
+          <div class="text-secondary mt-1" style="font-size:.78rem;" data-i18n="tools.auto_config_not_ready" data-i18n-params='{"bot_type":"{{ active_bot_label }}"}'>请先确认 AstrBot 与 {{ active_bot_label }} 容器均在运行。</div>
           {% endif %}
         </div>
         <div class="tool-actions">
-          <button class="btn btn-success btn-action" id="autoConfigBtn" onclick="autoConfigNapcat()" {% if not instance or (instance.bot_type or 'napcat') != 'napcat' or container_status.get('astrbot') != 'running' or container_status.get('napcat') != 'running' or not auto_config_allowed %}disabled{% endif %}>
+          <button class="btn btn-success btn-action" id="autoConfigBtn" onclick="autoConfigBot()" {% if not instance or container_status.get('astrbot') != 'running' or container_status.get(active_bot_type) != 'running' or not auto_config_allowed %}disabled{% endif %}>
             <i class="bi bi-magic me-1"></i><span data-i18n="tools.auto_config_now">一键配置</span>
           </button>
         </div>
@@ -163,10 +163,11 @@ async function resetAstrbotPassword(){
   }
 }
 
-async function autoConfigNapcat(){
+async function autoConfigBot(){
   const btn=document.getElementById('autoConfigBtn');
   if(!btn)return;
-  const confirmText = window.__i18n ? window.__i18n('tools.auto_config_confirm', '将自动覆写 AstrBot 与 NapCat 的反向 WebSocket 配置，并重启两个容器使配置生效。确定继续？') : '将自动覆写 AstrBot 与 NapCat 的反向 WebSocket 配置，并重启两个容器使配置生效。确定继续？';
+  const botLabel='{{ active_bot_label }}';
+  const confirmText=(window.__i18n?window.__i18n('tools.auto_config_confirm','将覆写 AstrBot 与 {bot_type} 的反向 WebSocket 配置，并重启两个容器使配置生效。确定继续？'):'将覆写 AstrBot 与 {bot_type} 的反向 WebSocket 配置，并重启两个容器使配置生效。确定继续？').replace('{bot_type}',botLabel);
   if(!confirm(confirmText))return;
   const old=btn.innerHTML;
   btn.disabled=true;
@@ -175,7 +176,7 @@ async function autoConfigNapcat(){
     const resp=await fetch('/api/instance/auto_config',{method:'POST'});
     const data=await resp.json();
     if(data.ok){
-      alert((window.__i18n ? window.__i18n('tools.auto_config_success', '配置完成，已重启 AstrBot 与 NapCat。\nWS 地址：{ws_url}') : '配置完成，已重启 AstrBot 与 NapCat。\nWS 地址：{ws_url}').replace('{ws_url}', data.ws_url || ''));
+      alert((window.__i18n?window.__i18n('tools.auto_config_success','配置完成，已重启 AstrBot 与 {bot_type}。\nWS 地址：{ws_url}'):'配置完成，已重启 AstrBot 与 {bot_type}。\nWS 地址：{ws_url}').replace('{bot_type}',botLabel).replace('{ws_url}',data.ws_url||''));
     }else{
       alert(data.error || (window.__i18n ? window.__i18n('tools.auto_config_failed', '配置失败') : '配置失败'));
     }

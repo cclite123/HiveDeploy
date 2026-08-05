@@ -452,6 +452,17 @@ def _find_container_file(container, command: str) -> str | None:
         return None
 
 
+def _find_container_files(container, command: str) -> List[str]:
+    try:
+        result = container.exec_run(["sh", "-lc", command])
+        if result.exit_code != 0:
+            return []
+        output = result.output.decode("utf-8", errors="ignore")
+        return sorted({line.strip() for line in output.splitlines() if line.strip()})
+    except Exception:
+        return []
+
+
 def sh_quote(value: str) -> str:
     return "'" + value.replace("'", "'\"'\"'") + "'"
 
@@ -492,53 +503,13 @@ def _service_data_dir(username: str, service: str, container_dest: str) -> str:
     return os.path.join(DATA_DIR, username, service)
 
 
-def configure_napcat_astrbot(username: str, ws_url: str) -> Dict[str, Any]:
-    status = get_instance_status(username)
-    if status.get("astrbot") != "running" or status.get("napcat") != "running":
-        return {"ok": False, "error": "AstrBot 和 NapCat 容器需要同时处于 running 状态"}
-    if status.get("llonebot") == "running":
-        return {"ok": False, "error": "LLOneBot 不支持一键配置，请切换为 NapCat"}
-
-    client = get_client()
-    try:
-        astrbot_container = client.containers.get(f"astrbot_{username}")
-        napcat_container = client.containers.get(f"napcat_{username}")
-    except Exception:
-        return {"ok": False, "error": "无法读取 AstrBot 或 NapCat 容器"}
-
-    astrbot_config_path = _find_container_file(astrbot_container, r'''
-for p in /AstrBot/data/cmd_config.json /app/data/cmd_config.json /data/cmd_config.json /AstrBot/cmd_config.json; do
-  [ -f "$p" ] && echo "$p" && exit 0
-done
-find /AstrBot /app /data /root -name 'cmd_config.json' -type f 2>/dev/null | sed -n '1p'
-''')
-    napcat_config_path = _find_container_file(napcat_container, r'''
-for p in /app/napcat/config/onebot11_*.json /root/.config/QQ/config/onebot11_*.json /root/.config/QQ/*/onebot11_*.json; do
-  [ -f "$p" ] && echo "$p" && exit 0
-done
-find /app/napcat /root/.config/QQ -name 'onebot11_*.json' -type f 2>/dev/null | sed -n '1p'
-''')
-    if not astrbot_config_path:
-        return {"ok": False, "error": "未在 AstrBot 容器内找到 cmd_config.json，请先启动一次 AstrBot"}
-    if not napcat_config_path:
-        return {"ok": False, "error": "未找到 NapCat onebot11 配置，请先完成扫码登录"}
-
-    token = secrets.token_hex(16)
-
-    try:
-        astrbot_config = _read_container_json(astrbot_container, astrbot_config_path)
-    except FileNotFoundError:
-        return {"ok": False, "error": f"无法读取 AstrBot 配置文件：{astrbot_config_path}"}
-    except Exception as exc:
-        return {"ok": False, "error": f"无法读取 AstrBot 配置文件：{astrbot_config_path}；{exc}"}
-    if not isinstance(astrbot_config, dict):
-        return {"ok": False, "error": "AstrBot cmd_config.json 格式无效"}
-    dashboard = astrbot_config.setdefault("dashboard", {})
+def _configure_astrbot_platform(config: Dict[str, Any], token: str) -> Dict[str, Any]:
+    dashboard = config.setdefault("dashboard", {})
     if not isinstance(dashboard, dict):
         dashboard = {}
-        astrbot_config["dashboard"] = dashboard
+        config["dashboard"] = dashboard
     dashboard["host"] = "0.0.0.0"
-    astrbot_config["platform"] = [{
+    config["platform"] = [{
         "id": "default",
         "type": "aiocqhttp",
         "enable": True,
@@ -546,20 +517,15 @@ find /app/napcat /root/.config/QQ -name 'onebot11_*.json' -type f 2>/dev/null | 
         "ws_reverse_port": 6199,
         "ws_reverse_token": token,
     }]
-    _write_container_json(astrbot_container, astrbot_config_path, astrbot_config)
+    return config
 
-    try:
-        napcat_config = _read_container_json(napcat_container, napcat_config_path)
-    except FileNotFoundError:
-        return {"ok": False, "error": "无法读取 NapCat onebot11 配置"}
-    except Exception as exc:
-        return {"ok": False, "error": f"无法读取 NapCat onebot11 配置：{exc}"}
-    if not isinstance(napcat_config, dict):
-        return {"ok": False, "error": "NapCat onebot11 配置格式无效"}
-    network = napcat_config.setdefault("network", {})
+
+def _configure_napcat_connection(config: Dict[str, Any], ws_url: str,
+                                  token: str) -> Dict[str, Any]:
+    network = config.setdefault("network", {})
     if not isinstance(network, dict):
         network = {}
-        napcat_config["network"] = network
+        config["network"] = network
     network["websocketClients"] = [{
         "enable": True,
         "name": "rws",
@@ -572,16 +538,115 @@ find /app/napcat /root/.config/QQ -name 'onebot11_*.json' -type f 2>/dev/null | 
         "reconnectInterval": 30000,
         "verifyCertificate": True,
     }]
-    _write_container_json(napcat_container, napcat_config_path, napcat_config)
+    return config
+
+
+def _configure_llonebot_connection(config: Dict[str, Any], ws_url: str,
+                                    token: str) -> Dict[str, Any]:
+    ob11 = config.setdefault("ob11", {})
+    if not isinstance(ob11, dict):
+        ob11 = {}
+        config["ob11"] = ob11
+    ob11["enable"] = True
+    ob11["connect"] = [{
+        "type": "ws-reverse",
+        "enable": True,
+        "url": ws_url,
+        "heartInterval": 60000,
+        "token": token,
+        "reportSelfMessage": False,
+        "reportOfflineMessage": False,
+        "messageFormat": "array",
+        "debug": False,
+    }]
+    return config
+
+
+def configure_bot_astrbot(username: str, bot_type: str, ws_url: str) -> Dict[str, Any]:
+    if bot_type not in ("napcat", "llonebot"):
+        return {"ok": False, "error": "不支持的 Bot 类型"}
+    status = get_instance_status(username)
+    bot_label = "LLOneBot" if bot_type == "llonebot" else "NapCat"
+    if status.get("astrbot") != "running" or status.get(bot_type) != "running":
+        return {"ok": False, "error": f"AstrBot 和 {bot_label} 容器需要同时处于 running 状态"}
+
+    client = get_client()
+    try:
+        astrbot_container = client.containers.get(f"astrbot_{username}")
+        bot_container = client.containers.get(f"{bot_type}_{username}")
+    except Exception:
+        return {"ok": False, "error": f"无法读取 AstrBot 或 {bot_label} 容器"}
+
+    astrbot_config_path = _find_container_file(astrbot_container, r'''
+for p in /AstrBot/data/cmd_config.json /app/data/cmd_config.json /data/cmd_config.json /AstrBot/cmd_config.json; do
+  [ -f "$p" ] && echo "$p" && exit 0
+done
+find /AstrBot /app /data /root -name 'cmd_config.json' -type f 2>/dev/null | sed -n '1p'
+''')
+    if bot_type == "napcat":
+        bot_config_paths = _find_container_files(bot_container, r'''
+for p in /app/napcat/config/onebot11_*.json /root/.config/QQ/config/onebot11_*.json /root/.config/QQ/*/onebot11_*.json; do
+  [ -f "$p" ] && echo "$p"
+done
+find /app/napcat /root/.config/QQ -name 'onebot11_*.json' -type f 2>/dev/null
+''')
+    else:
+        bot_config_paths = _find_container_files(bot_container, r'''
+find /root/llonebot/data -maxdepth 1 -name 'config_*.json' -type f 2>/dev/null
+''')
+    if not astrbot_config_path:
+        return {"ok": False, "error": "未在 AstrBot 容器内找到 cmd_config.json，请先启动一次 AstrBot"}
+    if not bot_config_paths:
+        return {"ok": False, "error": f"未找到 {bot_label} 账号配置，请先完成扫码登录"}
+    if len(bot_config_paths) > 1:
+        return {"ok": False, "error": f"发现多个 {bot_label} 账号配置，无法确认要连接的 QQ 账号"}
+    bot_config_path = bot_config_paths[0]
+
+    token = secrets.token_hex(16)
+
+    try:
+        astrbot_config = _read_container_json(astrbot_container, astrbot_config_path)
+    except FileNotFoundError:
+        return {"ok": False, "error": f"无法读取 AstrBot 配置文件：{astrbot_config_path}"}
+    except Exception as exc:
+        return {"ok": False, "error": f"无法读取 AstrBot 配置文件：{astrbot_config_path}；{exc}"}
+    if not isinstance(astrbot_config, dict):
+        return {"ok": False, "error": "AstrBot cmd_config.json 格式无效"}
+
+    try:
+        bot_config = _read_container_json(bot_container, bot_config_path)
+    except FileNotFoundError:
+        return {"ok": False, "error": f"无法读取 {bot_label} 账号配置"}
+    except Exception as exc:
+        return {"ok": False, "error": f"无法读取 {bot_label} 账号配置：{exc}"}
+    if not isinstance(bot_config, dict):
+        return {"ok": False, "error": f"{bot_label} 账号配置格式无效"}
+
+    _configure_astrbot_platform(astrbot_config, token)
+    if bot_type == "llonebot":
+        _configure_llonebot_connection(bot_config, ws_url, token)
+    else:
+        _configure_napcat_connection(bot_config, ws_url, token)
+    try:
+        _write_container_json(bot_container, bot_config_path, bot_config)
+        _write_container_json(astrbot_container, astrbot_config_path, astrbot_config)
+    except Exception as exc:
+        return {"ok": False, "error": f"写入连接配置失败：{exc}"}
 
     restart_user_instance(username, "astrbot")
-    restart_user_instance(username, "napcat")
+    restart_user_instance(username, bot_type)
     return {
         "ok": True,
         "ws_url": ws_url,
         "astrbot_config": astrbot_config_path,
-        "napcat_config": napcat_config_path,
+        "bot_config": bot_config_path,
+        "bot_type": bot_type,
     }
+
+
+def configure_napcat_astrbot(username: str, ws_url: str) -> Dict[str, Any]:
+    """兼容原有调用方。"""
+    return configure_bot_astrbot(username, "napcat", ws_url)
 
 
 def _find_astrbot_cmd_config(container) -> str | None:
@@ -667,35 +732,6 @@ def write_napcat_config(napcat_dir: str, username: str, astrbot_ws_port: int):
         json.dump(config, f, ensure_ascii=False, indent=2)
 
 
-def write_llonebot_config(llonebot_dir: str, username: str, astrbot_ws_port: int):
-    """
-    LLOneBot 通过公网 IP + 对外端口连接到 AstrBot，与 NapCat 功能一致。
-    astrbot_ws_port 为宿主机上 AstrBot 6199 的对外映射端口。
-    """
-    public_ip = detect_public_ip()
-    ws_url = f"ws://{public_ip}:{astrbot_ws_port}"
-    logger.info(f"[{username}] LLOneBot → AstrBot WS 地址: {ws_url}")
-
-    config_dir = os.path.join(llonebot_dir, "config")
-    os.makedirs(config_dir, exist_ok=True)
-    config = {
-        "wsServers": [{
-            "name": "default_ws", "enable": True,
-            "port": 3001, "host": "0.0.0.0",
-            "heartInterval": 30000, "token": "",
-            "messagePostFormat": "array", "debug": False
-        }],
-        "wsReverseServers": [{
-            "name": f"astrbot_{username}", "enable": True,
-            "url": ws_url,
-            "heartInterval": 30000, "reconnectInterval": 5000, "token": ""
-        }],
-        "debug": False, "localFile2Url": True
-    }
-    with open(os.path.join(config_dir, "llonebot.json"), "w") as f:
-        json.dump(config, f, ensure_ascii=False, indent=2)
-
-
 def _build_extra_port_bindings(extra_ports: List[Dict]) -> Dict:
     """将弹性端口配置转成 docker SDK ports 字典"""
     bindings = {}
@@ -722,10 +758,8 @@ def _create_instance_background(username: str, user_id: int, extra_ports: List[D
         os.makedirs(astrbot_dir, exist_ok=True)
         os.makedirs(bot_dir,    exist_ok=True)
 
-        # 写入对应 bot 的配置文件
-        if bot_type == "llonebot":
-            write_llonebot_config(bot_dir, username, effective_ws)
-        else:
+        # NapCat 保留原有预置逻辑；LLOneBot 登录后会自行生成 config_<QQ>.json。
+        if bot_type != "llonebot":
             write_napcat_config(bot_dir, username, effective_ws)
         write_astrbot_config(astrbot_dir, username)
 
@@ -839,13 +873,19 @@ def _run_napcat(client, username: str, user_id: int, ports: Dict, data_dir: str,
 def _run_llonebot(client, username: str, user_id: int, ports: Dict, data_dir: str, ll_extra: Dict):
     """创建并启动 LLOneBot 容器（端口冲突前请先调用 _force_remove 清理旧容器）"""
     llonebot_dir = os.path.join(data_dir, "llonebot")
+    llonebot_data_dir = os.path.join(llonebot_dir, ".llonebot-data")
+    os.makedirs(llonebot_dir, exist_ok=True)
+    os.makedirs(llonebot_data_dir, exist_ok=True)
     llonebot_ports = {"3080/tcp": ports["napcat_web"]}
     llonebot_ports.update(ll_extra)
     return client.containers.run(
         LLONEBOT_IMAGE, name=f"llonebot_{username}",
         network=BOT_NETWORK, hostname=f"llonebot_{username}",
         ports=llonebot_ports,
-        volumes={**{llonebot_dir: {"bind": "/root/.config/QQ", "mode": "rw"}}, **_TZ_VOL},
+        volumes={**{
+            llonebot_dir: {"bind": "/root/.config/QQ", "mode": "rw"},
+            llonebot_data_dir: {"bind": "/root/llonebot/data", "mode": "rw"},
+        }, **_TZ_VOL},
         environment={**{"WEBUI_PORT": "3080"}, **_TZ_ENV},
         labels=_traefik_labels(username, "llonebot", 3080),
         detach=True, restart_policy={"Name": "unless-stopped"},
@@ -965,7 +1005,6 @@ def recreate_services(username: str, user_id: int, services: List[str],
                 elif svc == "llonebot":
                     llonebot_dir = os.path.join(data_dir, "llonebot")
                     os.makedirs(llonebot_dir, exist_ok=True)
-                    write_llonebot_config(llonebot_dir, username, ws_port)
                     return _run_llonebot(client, username, user_id, ports, data_dir, ll_ex)
                 else:  # napcat
                     napcat_dir = os.path.join(data_dir, "napcat")
@@ -1106,7 +1145,6 @@ def create_single_service_async(username: str, user_id: int, service: str,
                 _force_remove(client, f"llonebot_{username}")
                 llonebot_dir = os.path.join(data_dir, "llonebot")
                 os.makedirs(llonebot_dir, exist_ok=True)
-                write_llonebot_config(llonebot_dir, username, effective_ws)
                 _set_progress(username, "正在拉取 LLOneBot 镜像...")
                 pull_with_fallback(
                     client, LLONEBOT_IMAGE,
@@ -1170,7 +1208,6 @@ def _recreate_containers(client, username: str, user_id: int, extra_ports: List[
     if bot_type == "llonebot":
         llonebot_dir = os.path.join(data_dir, "llonebot")
         os.makedirs(llonebot_dir, exist_ok=True)
-        write_llonebot_config(llonebot_dir, username, effective_ws)
         _run_llonebot(client, username, user_id, ports, data_dir, ll_extra)
     else:
         napcat_dir = os.path.join(data_dir, "napcat")
@@ -1305,7 +1342,6 @@ def pull_and_recreate_single(username: str, user_id: int, service: str,
                 _force_remove(client, f"llonebot_{username}")
                 llonebot_dir = os.path.join(data_dir, "llonebot")
                 os.makedirs(llonebot_dir, exist_ok=True)
-                write_llonebot_config(llonebot_dir, username, effective_ws)
                 _set_pull_progress(key, "用新镜像重建 LLOneBot 容器...")
                 _run_llonebot(client, username, user_id, ports, data_dir, ll_extra)
 

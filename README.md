@@ -19,7 +19,10 @@
 -   📁 **文件管理** — 在线浏览 / 编辑 / 上传容器内文件
 -   🖥️ **Web 终端** — 浏览器内直接连接容器终端
 -   🚦 **Traefik HTTPS** — 内置 Traefik 反向代理，支持自有 SSL 证书
--   🔄 **镜像多源拉取** — 自动尝试多个 Docker 镜像加速源，确保拉取成功率
+-   🔄 **持久任务进度** — 创建、更新、切换 Bot 和端口重建进度可跨页面刷新恢复
+-   🌐 **镜像源管理** — 管理员维护、排序和设置默认源，用户可手动选择并自动回退
+-   🧹 **安全镜像清理** — 只清理三类受管旧镜像，任何容器引用的镜像绝不删除
+-   🔗 **一键连接** — 自动配置 AstrBot 与 NapCat 或 LLOneBot 的反向 WebSocket 和共享 Token
 
 ---
 
@@ -116,8 +119,9 @@ bash scripts/setup.sh
 3.  配置 **SMTP**（用于邮箱验证和到期提醒）
 4.  可选配置 **支付信息**（收款码、续期开关）
 5.  发布 **公告**（支持信息 / 价格 / 迁移 / 警告 / 封禁等类型）
-6.  管理用户（创建 / 封禁 / 删除 / 续期 / 重置密码）
-7.  查看续期记录和邀请码统计
+6.  在 **镜像管理** 中维护下载源，并按需预览、执行或定时清理旧镜像
+7.  管理用户（创建 / 封禁 / 删除 / 续期 / 重置密码）
+8.  查看续期记录和邀请码统计
 
 ### 用户
 
@@ -127,7 +131,7 @@ bash scripts/setup.sh
 4.  实例创建后可以：
     -   打开 **AstrBot WebUI** 配置 AI 模型和插件
     -   打开 **NapCat / LLOneBot WebUI** 扫码登录 QQ
-    -   使用 **一键配置** 自动完成 AstrBot 与 NapCat 的正向 WebSocket 连接
+    -   使用 **一键配置** 自动完成 AstrBot 与当前 NapCat / LLOneBot 的反向 WebSocket 连接
     -   管理 **弹性端口**（额外映射 7 个自定义端口）
     -   查看实时系统资源（CPU / 内存 / 磁盘）
     -   管理容器文件（浏览 / 编辑 / 上传）
@@ -198,7 +202,20 @@ bash scripts/backup.sh 用户名
 
 # 重置管理员密码
 bash scripts/reset_admin.sh
+
+# 预览现有 LLOneBot 容器数据迁移（默认不会写入，并自动识别实例卷路径）
+bash scripts/migrate_llonebot_data.sh
+
+# 确认路径后执行 LLOneBot 数据迁移
+DRY_RUN=0 bash scripts/migrate_llonebot_data.sh
 ```
+
+### 镜像自动清理切换说明
+
+网页端清理计划默认关闭。若服务器上已有旧的 systemd 清理任务，部署新版后应先执行
+`systemctl disable --now hivedeploy-image-cleanup.timer`，确认旧调度已停止，再在“管理后台 → 镜像管理”中开启每日清理，避免同一时间重复执行。
+
+清理器不会使用 `docker image prune -a`，不会处理未知项目镜像、容器或卷；每类保留最新镜像，并在删除前再次检查运行中和已停止容器的引用。
 
 ---
 
