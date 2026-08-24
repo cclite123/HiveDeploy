@@ -252,7 +252,24 @@
       <i class="bi bi-person me-1"></i>{{ user.username }} · <span data-i18n="dashboard.page_subtitle">实例创建、入口和排障都在这里</span>
     </p>
   </div>
+  {% if instances is defined and instances %}
+  <div class="ms-auto d-flex align-items-center gap-2" style="min-width:240px;">
+    <label for="instanceSelector" class="small text-secondary mb-0">当前实例</label>
+    <select id="instanceSelector" class="form-select form-select-sm">
+      {% for item in instances %}
+      <option value="{{ item.id }}" {% if instance and item.id == instance.id %}selected{% endif %}>{{ item.display_name or ('默认实例' if item.instance_key == 'default' else item.instance_key) }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
 </div>
+
+{% if instances is defined and instances|length > 0 and instance_quota is defined and instance_quota.enabled %}
+<div class="alert alert-secondary py-2 d-flex align-items-center justify-content-between gap-2">
+  <span><i class="bi bi-layers me-1"></i>实例 {{ instance_quota.count }}/{{ instance_quota.max_instances }}</span>
+  {% if instance_quota.remaining > 0 %}<button type="button" class="btn btn-sm btn-outline-success" onclick="openCreateNamedInstance()">创建实例</button>{% endif %}
+</div>
+{% endif %}
 
 <div class="dashboard-hero">
   <div class="dashboard-hero-grid">
@@ -960,6 +977,55 @@
 
 {% block scripts %}
 <script>
+// 多实例选择器：选择结果保存在浏览器，并通过 instance_id 重新加载当前实例。
+(function initInstanceSelector(){
+  const selector = document.getElementById('instanceSelector');
+  if (!selector) return;
+  const key = 'hivedeploy.selectedInstance';
+  const saved = localStorage.getItem(key);
+  if (saved && [...selector.options].some(o => o.value === saved) && selector.value !== saved) {
+    selector.value = saved;
+    window.location.search = '?instance_id=' + encodeURIComponent(saved);
+    return;
+  }
+  selector.addEventListener('change', () => {
+    localStorage.setItem(key, selector.value);
+    window.location.search = '?instance_id=' + encodeURIComponent(selector.value);
+  });
+  const selected = () => localStorage.getItem(key) || selector.value;
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = (input, init) => {
+    const raw = typeof input === 'string' ? input : input.url;
+    if (raw && raw.startsWith('/api/instance') && !raw.includes('instance_id=')) {
+      const joiner = raw.includes('?') ? '&' : '?';
+      input = raw + joiner + 'instance_id=' + encodeURIComponent(selected());
+    }
+    return nativeFetch(input, init);
+  };
+  document.querySelectorAll('form[action^="/api/instance"]').forEach(form => {
+    const id = selected();
+    if (id && !form.action.includes('instance_id=')) {
+      form.action += (form.action.includes('?') ? '&' : '?') + 'instance_id=' + encodeURIComponent(id);
+    }
+  });
+  document.querySelectorAll('a[href^="/logs/"],a[href^="/terminal/"],a[href^="/files/"]').forEach(link => {
+    const id = selected();
+    if (id && !link.href.includes('instance_id=')) {
+      link.href += (link.href.includes('?') ? '&' : '?') + 'instance_id=' + encodeURIComponent(id);
+    }
+  });
+})();
+async function openCreateNamedInstance(){
+  const display_name = window.prompt('请输入实例显示名称', '新实例');
+  if (!display_name) return;
+  const bot_type = window.confirm('确定使用 LLOneBot？点击取消使用 NapCat。') ? 'llonebot' : 'napcat';
+  const response = await fetch('/api/instances', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({display_name, bot_type})});
+  const data = await response.json().catch(()=>({}));
+  if (!response.ok || data.ok === false) { alert(data.error || '创建实例失败'); return; }
+  if (data.instance && data.instance.id) localStorage.setItem('hivedeploy.selectedInstance', data.instance.id);
+  window.location.reload();
+}
 function __i(key, fallback) {
   if (window.__i18n) return window.__i18n(key, fallback);
   return fallback;

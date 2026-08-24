@@ -56,7 +56,12 @@ TEXT_EXTS = {
 
 def _get_container(username: str, service: str):
     client = docker.from_env()
-    return client.containers.get(f"{service}_{username}")
+    raw_username = username
+    instance_key = "default"
+    if "::" in raw_username:
+        raw_username, instance_key = raw_username.split("::", 1)
+    suffix = "" if not instance_key or instance_key == "default" else f"_{instance_key}"
+    return client.containers.get(f"{service}_{raw_username}{suffix}")
 
 
 def _exec(username: str, service: str, cmd: str) -> tuple:

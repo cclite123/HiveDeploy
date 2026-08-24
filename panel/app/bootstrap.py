@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .database import engine, SessionLocal, get_db
-from .models import User, SmtpConfig, SiteConfig, Announcement
+from .models import User, Instance, SmtpConfig, SiteConfig, Announcement
 from .auth import get_password_hash
 
 logging.basicConfig(level=logging.INFO)
@@ -44,18 +44,111 @@ def _run_migrations():
         if "bot_memory_limit_mb" not in users_cols:
             conn.execute(text("ALTER TABLE users ADD COLUMN bot_memory_limit_mb INTEGER"))
             conn.commit()
+        if "multi_instance_enabled" not in users_cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN multi_instance_enabled BOOLEAN NOT NULL DEFAULT 0"))
+            conn.commit()
+        if "max_instances" not in users_cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN max_instances INTEGER NOT NULL DEFAULT 1"))
+            conn.commit()
 
         if insp.has_table("instances"):
             inst_cols = [c["name"] for c in insp.get_columns("instances")]
-            if "extra_ports_json" not in inst_cols:
-                conn.execute(text("ALTER TABLE instances ADD COLUMN extra_ports_json TEXT DEFAULT '[]'"))
+            # 旧版本对 user_id 建了 UNIQUE 约束，SQLite 只能通过重建表移除。
+            # 迁移使用显式列清单，重复执行安全，并保留旧 id/端口/容器字段。
+            unique_user_only = False
+            try:
+                for idx in conn.execute(text("PRAGMA index_list('instances')")).mappings():
+                    if not idx["unique"]:
+                        continue
+                    cols = [row[2] for row in conn.execute(text(f"PRAGMA index_info('{idx['name']}')"))]
+                    if cols == ["user_id"]:
+                        unique_user_only = True
+                        break
+            except Exception:
+                pass
+            required = {
+                "instance_key": "VARCHAR(64)",
+                "display_name": "VARCHAR(128)",
+                "storage_root": "VARCHAR(512)",
+                "port_base": "INTEGER",
+                "extra_ports_json": "TEXT DEFAULT '[]'",
+                "llonebot_container_id": "VARCHAR(64)",
+                "bot_type": "VARCHAR(16) DEFAULT 'napcat'",
+            }
+            if not unique_user_only:
+                for name, ddl in required.items():
+                    if name not in inst_cols:
+                        conn.execute(text(f"ALTER TABLE instances ADD COLUMN {name} {ddl}"))
+                        conn.commit()
+            else:
+                # 旧表的列来自历史版本，先确保源表拥有可复制的新增列。
+                for name, ddl in required.items():
+                    if name not in inst_cols:
+                        conn.execute(text(f"ALTER TABLE instances ADD COLUMN {name} {ddl}"))
+                        conn.commit()
+                conn.execute(text("""
+                    CREATE TABLE instances__multi_new (
+                        id INTEGER PRIMARY KEY,
+                        user_id INTEGER NOT NULL,
+                        instance_key VARCHAR(64) NOT NULL,
+                        display_name VARCHAR(128) NOT NULL,
+                        storage_root VARCHAR(512),
+                        port_base INTEGER,
+                        astrbot_container_id VARCHAR(64),
+                        napcat_container_id VARCHAR(64),
+                        llonebot_container_id VARCHAR(64),
+                        astrbot_port INTEGER NOT NULL,
+                        napcat_web_port INTEGER NOT NULL,
+                        bot_type VARCHAR(16) DEFAULT 'napcat',
+                        napcat_ws_port INTEGER NOT NULL,
+                        extra_ports_json TEXT DEFAULT '[]',
+                        status VARCHAR(16) DEFAULT 'creating',
+                        created_at DATETIME,
+                        updated_at DATETIME,
+                        CONSTRAINT uq_instances_user_instance_key UNIQUE (user_id, instance_key)
+                    )
+                """))
+                conn.execute(text("""
+                    INSERT INTO instances__multi_new
+                    (id,user_id,instance_key,display_name,storage_root,port_base,
+                     astrbot_container_id,napcat_container_id,llonebot_container_id,
+                     astrbot_port,napcat_web_port,bot_type,napcat_ws_port,extra_ports_json,
+                     status,created_at,updated_at)
+                    SELECT instances.id,instances.user_id,
+                           COALESCE(NULLIF(instances.instance_key,''),'default'),
+                           COALESCE(NULLIF(instances.display_name,''),'默认实例'),
+                           COALESCE(instances.storage_root, :root_prefix || users.username || ''),
+                           COALESCE(instances.port_base, instances.astrbot_port),
+                           instances.astrbot_container_id,instances.napcat_container_id,instances.llonebot_container_id,
+                           instances.astrbot_port,instances.napcat_web_port,COALESCE(instances.bot_type,'napcat'),instances.napcat_ws_port,
+                           COALESCE(instances.extra_ports_json,'[]'),instances.status,instances.created_at,instances.updated_at
+                    FROM instances JOIN users ON users.id=instances.user_id
+                """), {"root_prefix": os.environ.get("DATA_DIR", "/data/instances").rstrip("/") + "/",
+                        "port_base": int(os.environ.get("INSTANCE_PORT_BASE", "20000"))})
+                conn.execute(text("DROP TABLE instances"))
+                conn.execute(text("ALTER TABLE instances__multi_new RENAME TO instances"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_instances_user_id ON instances(user_id)"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_instances_id ON instances(id)"))
                 conn.commit()
-            if "llonebot_container_id" not in inst_cols:
-                conn.execute(text("ALTER TABLE instances ADD COLUMN llonebot_container_id VARCHAR(64)"))
-                conn.commit()
-            if "bot_type" not in inst_cols:
-                conn.execute(text("ALTER TABLE instances ADD COLUMN bot_type VARCHAR(16) DEFAULT 'napcat'"))
-                conn.commit()
+            # 回填旧实例兼容值。目录和端口不迁移，只记录原布局。
+            conn.execute(text("""
+                UPDATE instances SET
+                    instance_key=COALESCE(NULLIF(instance_key,''),'default'),
+                    display_name=COALESCE(NULLIF(display_name,''),'默认实例'),
+                    storage_root=COALESCE(NULLIF(storage_root,''), :data_prefix ||
+                        (SELECT username FROM users WHERE users.id=instances.user_id)),
+                    port_base=COALESCE(port_base, astrbot_port),
+                    extra_ports_json=COALESCE(extra_ports_json,'[]')
+            """), {"data_prefix": os.environ.get("DATA_DIR", "/data/instances").rstrip("/") + "/",
+                    "port_base": int(os.environ.get("INSTANCE_PORT_BASE", "20000"))})
+            conn.commit()
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_instances_user_instance_key ON instances(user_id, instance_key)"))
+            conn.commit()
+
+        # 管理员不受多实例开关限制；普通用户默认仍为 1 个实例。
+        conn.execute(text("UPDATE users SET max_instances=1 WHERE max_instances IS NULL OR max_instances < 1"))
+        conn.execute(text("UPDATE users SET multi_instance_enabled=1, max_instances=CASE WHEN max_instances < 2 THEN 2 ELSE max_instances END WHERE is_admin=1"))
+        conn.commit()
 
         if not insp.has_table("email_log"):
             conn.execute(text("""
@@ -69,6 +162,12 @@ def _run_migrations():
             """))
             conn.execute(text("CREATE INDEX ix_email_log_user_id ON email_log (user_id)"))
             conn.commit()
+
+        if insp.has_table("progress_tasks"):
+            progress_cols = [c["name"] for c in inspect(engine).get_columns("progress_tasks")]
+            if "instance_key" not in progress_cols:
+                conn.execute(text("ALTER TABLE progress_tasks ADD COLUMN instance_key VARCHAR(64) NOT NULL DEFAULT 'default'"))
+                conn.commit()
 
         if not insp.has_table("email_templates"):
             conn.execute(text("""

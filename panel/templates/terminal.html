@@ -62,13 +62,13 @@
     <h4 class="mb-0 fw-semibold">
       <i class="bi bi-code-square me-2"></i>{{ service }} <span data-i18n="dashboard.terminal">终端</span>
     </h4>
-    <p class="text-secondary mb-0 mt-1" style="font-size:.875rem;" data-i18n="terminal.container_info" data-i18n-params='{"container":"{{ service }}_{{ user.username }}"}'>
-      容器: {{ service }}_{{ user.username }}
+    <p class="text-secondary mb-0 mt-1" style="font-size:.875rem;" data-i18n="terminal.container_info" data-i18n-params='{"container":"{{ container_name }}"}'>
+      容器: {{ container_name }}
     </p>
   </div>
   <div class="terminal-actions d-flex align-items-center gap-2">
     <span id="connStatus" class="conn-badge bg-warning" data-connection-state="connecting">连接中...</span>
-    {% set active_bot_type = (user.instance.bot_type or 'napcat') if user.instance else none %}
+    {% set active_bot_type = (instance.bot_type or 'napcat') if instance else none %}
     {% if service == 'astrbot' %}
     {% if active_bot_type == 'napcat' %}
     <a href="/terminal/napcat" class="btn btn-sm btn-outline-secondary"><span data-i18n="terminal.switch_to" data-i18n-params='{"service":"NapCat"}'>切换到 NapCat</span></a>
@@ -95,6 +95,7 @@
 <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
 <script>
 const SERVICE = '{{ service }}';
+const INSTANCE_ID = '{{ instance_id or "" }}';
 let term, fitAddon, ws;
 
 function __i(key, fallback) {
@@ -160,7 +161,8 @@ function sendResize() {
 
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const socket = new WebSocket(`${proto}://${location.host}/ws/terminal/${SERVICE}`);
+  const suffix = INSTANCE_ID ? `?instance_id=${encodeURIComponent(INSTANCE_ID)}` : '';
+  const socket = new WebSocket(`${proto}://${location.host}/ws/terminal/${SERVICE}${suffix}`);
   ws = socket;
   socket.binaryType = 'arraybuffer';
 

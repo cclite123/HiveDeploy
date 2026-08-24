@@ -4,14 +4,18 @@ import select
 import logging
 
 import docker as docker_lib
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, Depends
 from fastapi.responses import HTMLResponse
 from fastapi import Request, Depends
 from jose import jwt, JWTError
 
 from .bootstrap import app, templates
 from .auth import get_current_user_from_cookie, SECRET_KEY, ALGORITHM
-from .models import User
+from .models import User, Instance
+from .database import get_db, SessionLocal
+from .instance_context import get_instance, instance_key
+from sqlalchemy.orm import Session
+from .docker_manager import instance_container_name
 from .filemanager import get_terminal_root
 from .service_access import ensure_instance_service
 
@@ -21,14 +25,23 @@ router = APIRouter()
 
 @router.get("/terminal/{service}", response_class=HTMLResponse)
 async def terminal_page(service: str, request: Request,
-                        user: User = Depends(get_current_user_from_cookie)):
-    ensure_instance_service(user, service)
+                        instance_id: int | None = Query(None),
+                        user: User = Depends(get_current_user_from_cookie),
+                        db: Session = Depends(get_db)):
+    instance = get_instance(db, user, instance_id)
+    if not instance:
+        from fastapi import HTTPException
+        raise HTTPException(404, "实例不存在")
+    ensure_instance_service(user, service, instance)
     return templates.TemplateResponse(request, "terminal.html",
-        {"user": user, "service": service})
+        {"user": user, "active_instance": instance, "service": service, "instance": instance,
+         "instance_id": instance.id,
+         "container_name": instance_container_name(user.username, service, instance_key(instance))})
 
 
 @router.websocket("/ws/terminal/{service}")
-async def terminal_ws(websocket: WebSocket, service: str):
+async def terminal_ws(websocket: WebSocket, service: str,
+                      instance_id: int | None = Query(None)):
     token = websocket.cookies.get("access_token")
     if not token:
         await websocket.close(code=4001); return
@@ -42,9 +55,19 @@ async def terminal_ws(websocket: WebSocket, service: str):
     if service not in ("astrbot", "napcat", "llonebot"):
         await websocket.close(code=4002); return
 
+    db = SessionLocal()
+    instance = db.query(Instance).join(User).filter(User.username == username).first()
+    if instance_id is not None:
+        owner_id = instance.user_id if instance else -1
+        instance = db.query(Instance).filter_by(id=instance_id, user_id=owner_id).first()
+    if not instance:
+        db.close(); await websocket.close(code=4004); return
+    ensure_instance_service(User(username=username), service, instance)
+    selected_key = instance_key(instance)
+    db.close()
     await websocket.accept()
     client = docker_lib.from_env()
-    container_name = f"{service}_{username}"
+    container_name = instance_container_name(username, service, selected_key)
 
     try:
         container = client.containers.get(container_name)

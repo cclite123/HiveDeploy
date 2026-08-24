@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -21,15 +21,32 @@ class User(Base):
     retained_account = Column(Boolean, default=False)
     astrbot_memory_limit_mb = Column(Integer, nullable=True)
     bot_memory_limit_mb = Column(Integer, nullable=True)
+    # 默认保持单实例；管理员可逐用户开启多实例。
+    multi_instance_enabled = Column(Boolean, default=False, nullable=False)
+    max_instances = Column(Integer, default=1, nullable=False)
 
-    instance = relationship("Instance", back_populates="user", uselist=False)
+    instances = relationship("Instance", back_populates="user", cascade="all, delete-orphan",
+                             order_by="Instance.created_at")
+
+    @property
+    def instance(self):
+        """旧代码兼容：返回默认实例/最早实例。"""
+        rows = list(getattr(self, "instances", None) or [])
+        return next((item for item in rows if (item.instance_key or "default") == "default"),
+                    rows[0] if rows else None)
 
 
 class Instance(Base):
     __tablename__ = "instances"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+
+    # instance_key 是内部不可变标识；default 专门保留旧实例命名/目录兼容。
+    instance_key = Column(String(64), nullable=False, default="default")
+    display_name = Column(String(128), nullable=False, default="默认实例")
+    storage_root = Column(String(512), nullable=True)
+    port_base = Column(Integer, nullable=True)
 
     astrbot_container_id   = Column(String(64), nullable=True)
     napcat_container_id    = Column(String(64), nullable=True)
@@ -51,7 +68,11 @@ class Instance(Base):
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
-    user = relationship("User", back_populates="instance")
+    user = relationship("User", back_populates="instances")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "instance_key", name="uq_instances_user_instance_key"),
+    )
 
 
 class SmtpConfig(Base):
@@ -92,6 +113,7 @@ class ProgressTask(Base):
 
     id = Column(String(32), primary_key=True)
     username = Column(String(32), nullable=False, index=True)
+    instance_key = Column(String(64), nullable=False, default="default", index=True)
     kind = Column(String(32), nullable=False)
     target = Column(String(32), nullable=False, default="both")
     status = Column(String(16), nullable=False, default="running", index=True)

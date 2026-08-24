@@ -827,6 +827,22 @@ html[data-theme="light"] .fm-upload-progress {
 
 {% block scripts %}
 <script>
+const INSTANCE_ID = '{{ instance_id or "" }}';
+(function bindInstanceScope(){
+  if (!INSTANCE_ID) return;
+  const suffix = url => {
+    if (!url || url.includes('instance_id=')) return url;
+    const join = url.includes('?') ? '&' : '?';
+    return url + join + 'instance_id=' + encodeURIComponent(INSTANCE_ID);
+  };
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = (input, init) => {
+    if (typeof input === 'string') input = suffix(input);
+    return nativeFetch(input, init);
+  };
+  document.querySelectorAll('form[action^="/files/"]').forEach(form => form.action = suffix(form.action));
+  document.querySelectorAll('a[href^="/files/"]').forEach(link => link.href = suffix(link.getAttribute('href')));
+})();
 // ═══════════════════ i18n helper ═══════════════════
 function __i(key, fallback) {
   if (window.__i18n) return window.__i18n(key, fallback);

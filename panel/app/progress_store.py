@@ -24,6 +24,8 @@ def task_to_dict(task: ProgressTask | None) -> dict:
     return {
         "task_id": task.id,
         "kind": task.kind,
+        "instance_key": task.instance_key or "default",
+        "scope": f"{task.username}:{task.instance_key or 'default'}:{task.target}",
         "target": task.target,
         "status": task.status,
         "step": task.step or "",
@@ -45,10 +47,11 @@ def get_task(task_id: str) -> dict:
         db.close()
 
 
-def get_current_task(username: str, target: Optional[str] = None) -> dict:
+def get_current_task(username: str, target: Optional[str] = None,
+                     instance_key: str = "default") -> dict:
     db = SessionLocal()
     try:
-        query = db.query(ProgressTask).filter_by(username=username)
+        query = db.query(ProgressTask).filter_by(username=username, instance_key=instance_key or "default")
         if target:
             query = query.filter_by(target=target)
         running = query.filter_by(status="running").order_by(
@@ -62,18 +65,20 @@ def get_current_task(username: str, target: Optional[str] = None) -> dict:
         db.close()
 
 
-def start_task(username: str, kind: str, target: str, step: str) -> dict:
+def start_task(username: str, kind: str, target: str, step: str,
+               instance_key: str = "default") -> dict:
     with _write_lock:
         db = SessionLocal()
         try:
             active = db.query(ProgressTask).filter_by(
-                username=username, status="running"
+                username=username, instance_key=instance_key or "default", status="running"
             ).order_by(ProgressTask.started_at.desc()).first()
             if active:
                 raise TaskAlreadyRunning(task_to_dict(active))
             task = ProgressTask(
                 id=uuid.uuid4().hex,
                 username=username,
+                instance_key=instance_key or "default",
                 kind=kind,
                 target=target,
                 status="running",

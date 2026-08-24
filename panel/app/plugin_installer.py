@@ -90,11 +90,13 @@ def _container_path_exists(container, path: str) -> bool:
         return False
 
 
-def is_astrbot_plugin_installed(username: str, plugin_key: str, *, docker_client=None) -> bool:
+def is_astrbot_plugin_installed(username: str, plugin_key: str, *, docker_client=None,
+                                instance_key: str = "default") -> bool:
     spec = get_plugin_spec(plugin_key)
     username = _safe_username(username)
     client = docker_client or docker.from_env()
-    container = client.containers.get(f"astrbot_{username}")
+    suffix = "" if not instance_key or instance_key == "default" else f"_{instance_key}"
+    container = client.containers.get(f"astrbot_{username}{suffix}")
     return _container_path_exists(container, f"{ASTRBOT_DATA_DIR}/plugins/{spec.directory}")
 
 
@@ -242,10 +244,12 @@ class AstrBotPluginInstaller:
         data_dir: str = DATA_DIR,
         docker_client=None,
         archive_fetcher: ArchiveFetcher = _download_archive,
+        instance_key: str = "default",
     ):
         self.data_dir = data_dir
         self.docker_client = docker_client
         self.archive_fetcher = archive_fetcher
+        self.instance_key = instance_key or "default"
 
     def install(
         self,
@@ -258,7 +262,8 @@ class AstrBotPluginInstaller:
 
         client = self.docker_client or docker.from_env()
         try:
-            container = client.containers.get(f"astrbot_{username}")
+            suffix = "" if self.instance_key == "default" else f"_{self.instance_key}"
+            container = client.containers.get(f"astrbot_{username}{suffix}")
             container.reload()
         except Exception as exc:
             raise PluginInstallError(f"无法读取 AstrBot 容器：{exc}") from exc
@@ -394,15 +399,16 @@ class AstrBotPluginInstaller:
             shutil.rmtree(stage, ignore_errors=True)
 
 
-def install_astrbot_plugin(username: str, plugin_key: str, progress: Optional[ProgressCallback] = None) -> dict:
-    return AstrBotPluginInstaller().install(username, get_plugin_spec(plugin_key), progress)
+def install_astrbot_plugin(username: str, plugin_key: str, progress: Optional[ProgressCallback] = None,
+                           instance_key: str = "default") -> dict:
+    return AstrBotPluginInstaller(instance_key=instance_key).install(username, get_plugin_spec(plugin_key), progress)
 
 
-def start_astrbot_plugin_install(username: str, plugin_key: str) -> dict:
+def start_astrbot_plugin_install(username: str, plugin_key: str, instance_key: str = "default") -> dict:
     from .progress_store import start_task, update_task
 
     spec = get_plugin_spec(plugin_key)
-    task = start_task(username, "plugin_install", f"plugin:{spec.key}", "准备安装插件...")
+    task = start_task(username, "plugin_install", f"plugin:{spec.key}", "准备安装插件...", instance_key=instance_key)
 
     def run():
         try:
@@ -410,6 +416,7 @@ def start_astrbot_plugin_install(username: str, plugin_key: str) -> dict:
                 username,
                 spec.key,
                 lambda step, detail="": update_task(task["task_id"], step, detail),
+                instance_key=instance_key,
             )
             verb = "更新" if result["action"] == "updated" else "安装"
             update_task(

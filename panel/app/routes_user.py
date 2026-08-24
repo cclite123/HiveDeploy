@@ -5,7 +5,7 @@ from calendar import monthrange
 from datetime import datetime, timedelta
 
 import psutil
-from fastapi import APIRouter, Request, Depends, Form, HTTPException
+from fastapi import APIRouter, Request, Depends, Form, HTTPException, Query
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 
@@ -23,6 +23,7 @@ from .plugin_installer import (
 from .progress_store import TaskAlreadyRunning, get_current_task
 from .models import VerificationCode
 from .email_service import send_renewal_notification
+from .instance_context import get_instance, list_user_instances, instance_key, instance_to_dict, calc_instance_extra_ports
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -101,9 +102,15 @@ async def root(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request, user: User = Depends(get_current_user_from_cookie),
-                    db: Session = Depends(get_db)):
-    instance = db.query(Instance).filter_by(user_id=user.id).first()
-    container_status = get_instance_status(user.username) if instance else {}
+                    db: Session = Depends(get_db), instance_id: int | None = Query(None)):
+    instance = get_instance(db, user, instance_id)
+    container_status = get_instance_status(user.username) if instance and instance_key(instance) == "default" else {}
+    if instance and instance_key(instance) != "default":
+        try:
+            from .docker_manager import get_instance_context_status
+            container_status = get_instance_context_status(user.username, instance_key(instance))
+        except Exception:
+            container_status = {}
     bot_type = instance.bot_type if instance else "napcat"
     extra_ports = []
     all_ports = []
@@ -113,7 +120,7 @@ async def dashboard(request: Request, user: User = Depends(get_current_user_from
             extra_ports = [ep for ep in all_ports if ep.get("service") in ("astrbot", bot_type)]
         except Exception:
             pass
-    available_extra = calc_extra_ports(user.id) if instance else []
+    available_extra = calc_instance_extra_ports(instance) if instance else []
 
     # 计算弹性端口覆盖后的有效端口（用于连接配置展示）
     effective_astrbot_ws_port = instance.astrbot_ws_port if instance else 0
@@ -132,7 +139,13 @@ async def dashboard(request: Request, user: User = Depends(get_current_user_from
         elif svc == "llonebot" and cp == 3080:
             effective_bot_web_port = ep["host_port"]
 
+    instances = list_user_instances(db, user)
+    quota = {"count": len(instances), "max_instances": max(2, int(user.max_instances or 1)) if user.is_admin else max(1, int(user.max_instances or 1)),
+             "enabled": bool(user.is_admin or user.multi_instance_enabled)}
+    quota["remaining"] = max(0, quota["max_instances"] - quota["count"])
     return templates.TemplateResponse(request, "dashboard.html", {"user": user, "instance": instance,
+        "active_instance": instance,
+        "instances": instances, "instance_quota": quota,
         "container_status": container_status, "host": HOST,
         "extra_ports": extra_ports, "available_extra_ports": available_extra,
         "public_ip": detect_public_ip(),
@@ -145,9 +158,18 @@ async def dashboard(request: Request, user: User = Depends(get_current_user_from
 @router.get("/tools", response_class=HTMLResponse)
 async def quick_tools(request: Request,
                       user: User = Depends(get_current_user_from_cookie),
-                      db: Session = Depends(get_db)):
-    instance = db.query(Instance).filter_by(user_id=user.id).first()
-    container_status = get_instance_status(user.username) if instance else {}
+                      db: Session = Depends(get_db), instance_id: int | None = Query(None)):
+    instance = get_instance(db, user, instance_id)
+    try:
+        if instance and instance_key(instance) == "default":
+            container_status = get_instance_status(user.username)
+        elif instance:
+            from .docker_manager import get_instance_context_status
+            container_status = get_instance_context_status(user.username, instance_key(instance))
+        else:
+            container_status = {}
+    except Exception:
+        container_status = {}
     reset_access = _tool_access(db, "quick_tool_reset_astrbot_password_access", "limited")
     if _site_bool(db, "quick_tool_reset_astrbot_password_vip_only", False):
         reset_access = "vip"
@@ -157,12 +179,15 @@ async def quick_tools(request: Request,
     plugin_installed = False
     if instance:
         try:
-            plugin_installed = is_astrbot_plugin_installed(user.username, plugin_spec.key)
+            plugin_installed = is_astrbot_plugin_installed(user.username, plugin_spec.key,
+                                                           instance_key=instance_key(instance))
         except Exception:
             plugin_installed = False
     return templates.TemplateResponse(request, "tools.html", {
         "user": user,
         "instance": instance,
+        "active_instance": instance,
+        "instance_id": instance.id if instance else None,
         "container_status": container_status,
         "reset_astrbot_password_access": reset_access,
         "auto_config_access": auto_config_access,
@@ -181,21 +206,22 @@ async def quick_tools(request: Request,
 
 @router.post("/api/tools/reset-astrbot-password")
 async def reset_astrbot_password_tool(user: User = Depends(get_current_user_from_cookie),
-                                      db: Session = Depends(get_db)):
+                                      db: Session = Depends(get_db), instance_id: int | None = Query(None)):
     access = _tool_access(db, "quick_tool_reset_astrbot_password_access", "limited")
     if _site_bool(db, "quick_tool_reset_astrbot_password_vip_only", False):
         access = "vip"
     if not _tool_allowed(access, user):
         return JSONResponse({"ok": False, "error": "该快捷工具仅限 VIP 用户使用"}, status_code=403)
-    instance = db.query(Instance).filter_by(user_id=user.id).first()
+    instance = get_instance(db, user, instance_id)
     if not instance:
         return JSONResponse({"ok": False, "error": "实例不存在"})
-    return JSONResponse(reset_astrbot_dashboard_password(user.username))
+    return JSONResponse(reset_astrbot_dashboard_password(user.username, instance_key(instance)))
 
 
 @router.post("/api/tools/install-astrbot-plugin/{plugin_key}")
 async def install_astrbot_plugin_tool(
     plugin_key: str,
+    instance_id: int | None = Query(None),
     user: User = Depends(get_current_user_from_cookie),
     db: Session = Depends(get_db),
 ):
@@ -206,13 +232,18 @@ async def install_astrbot_plugin_tool(
     access = _tool_access(db, "quick_tool_install_astrbot_plugin_access", "limited")
     if not _tool_allowed(access, user):
         return JSONResponse({"ok": False, "error": "该快捷工具仅限 VIP 用户使用"}, status_code=403)
-    instance = db.query(Instance).filter_by(user_id=user.id).first()
+    instance = get_instance(db, user, instance_id)
     if not instance:
         return JSONResponse({"ok": False, "error": "实例不存在"}, status_code=404)
-    if get_instance_status(user.username).get("astrbot") != "running":
+    if instance_key(instance) == "default":
+        astrbot_status = get_instance_status(user.username).get("astrbot")
+    else:
+        from .docker_manager import get_instance_context_status
+        astrbot_status = get_instance_context_status(user.username, instance_key(instance)).get("astrbot")
+    if astrbot_status != "running":
         return JSONResponse({"ok": False, "error": "AstrBot 容器需要处于 running 状态"}, status_code=409)
     try:
-        task = start_astrbot_plugin_install(user.username, spec.key)
+        task = start_astrbot_plugin_install(user.username, spec.key, instance_key(instance))
     except TaskAlreadyRunning as exc:
         return JSONResponse({"ok": False, "error": str(exc), "task": exc.task}, status_code=409)
     except Exception as exc:
@@ -224,13 +255,17 @@ async def install_astrbot_plugin_tool(
 @router.get("/api/tools/install-astrbot-plugin/{plugin_key}/progress")
 async def install_astrbot_plugin_progress(
     plugin_key: str,
+    instance_id: int | None = Query(None),
     user: User = Depends(get_current_user_from_cookie),
+    db: Session = Depends(get_db),
 ):
     try:
         spec = get_plugin_spec(plugin_key)
     except Exception as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=404)
-    return JSONResponse(get_current_task(user.username, target=f"plugin:{spec.key}"))
+    instance = get_instance(db, user, instance_id)
+    return JSONResponse(get_current_task(user.username, target=f"plugin:{spec.key}",
+                                         instance_key=instance_key(instance) if instance else "default"))
 
 
 # ════════════════════════════════════════════════════════════
@@ -328,23 +363,24 @@ async def change_password(request: Request,
 # ════════════════════════════════════════════════════════════
 @router.get("/api/instance/stats")
 async def instance_stats(user: User = Depends(get_current_user_from_cookie),
-                         db: Session = Depends(get_db)):
+                         db: Session = Depends(get_db), instance_id: int | None = Query(None)):
     from .docker_manager import get_container_stats, get_data_dir_size
 
-    inst = db.query(Instance).filter_by(user_id=user.id).first()
+    inst = get_instance(db, user, instance_id)
     if not inst:
         return JSONResponse({"error": "无实例"})
 
     bot_type = inst.bot_type or "napcat"
 
     loop = asyncio.get_event_loop()
+    selected_key = instance_key(inst)
     ab_stats, bt_stats = await asyncio.gather(
-        loop.run_in_executor(None, get_container_stats, user.username, "astrbot"),
-        loop.run_in_executor(None, get_container_stats, user.username, bot_type),
+        loop.run_in_executor(None, get_container_stats, user.username, "astrbot", selected_key),
+        loop.run_in_executor(None, get_container_stats, user.username, bot_type, selected_key),
     )
     ab_size, bt_size = await asyncio.gather(
-        loop.run_in_executor(None, get_data_dir_size, user.username, "astrbot"),
-        loop.run_in_executor(None, get_data_dir_size, user.username, bot_type),
+        loop.run_in_executor(None, get_data_dir_size, user.username, "astrbot", selected_key, inst.storage_root),
+        loop.run_in_executor(None, get_data_dir_size, user.username, bot_type, selected_key, inst.storage_root),
     )
     ab_stats["data_size"] = ab_size
     bt_stats["data_size"] = bt_size

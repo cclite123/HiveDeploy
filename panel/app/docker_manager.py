@@ -260,6 +260,21 @@ def get_client():
     return _client
 
 
+def instance_container_name(username: str, service: str, instance_key: str = "default") -> str:
+    """统一生成容器名；default 保留旧名称以避免重建现有业务。"""
+    suffix = "" if not instance_key or instance_key == "default" else f"_{instance_key}"
+    return f"{service}_{username}{suffix}"
+
+
+def instance_data_root(username: str, instance_key: str = "default",
+                       storage_root: Optional[str] = None) -> str:
+    if storage_root:
+        return storage_root
+    if not instance_key or instance_key == "default":
+        return os.path.join(DATA_DIR, username)
+    return os.path.join(DATA_DIR, username, "instances", instance_key)
+
+
 def _traefik_labels(username: str, service: str, container_port: int) -> dict:
     """返回容器基础 labels（不启用 Traefik 路由，用端口直接访问）"""
     return {
@@ -277,14 +292,18 @@ def ensure_user_network():
         client.networks.create(BOT_NETWORK, driver="bridge")
 
 
-def calc_ports(user_id: int) -> Dict[str, int]:
+def calc_ports(user_id: int, port_base: Optional[int] = None) -> Dict[str, int]:
     """
     每用户固定分配 3 个端口（stride=10，其余 7 个留给弹性端口池）：
       +0  astrbot_web  — AstrBot 管理面板 (6185)
       +1  napcat_web   — NapCat WebUI    (6099)
       +2  astrbot_ws   — AstrBot WS 服务对外端口 (容器内 6199)
     """
-    offset = (user_id - 1) * 10
+    if not isinstance(user_id, int):
+        context = user_id
+        port_base = getattr(context, "port_base", None) or port_base
+        user_id = int(getattr(context, "user_id", 1))
+    offset = (user_id - 1) * 10 if port_base is None else int(port_base) - PORT_BASE
     return {
         "astrbot_web": PORT_BASE + offset,
         "napcat_web":  PORT_BASE + offset + 1,
@@ -292,9 +311,13 @@ def calc_ports(user_id: int) -> Dict[str, int]:
     }
 
 
-def calc_extra_ports(user_id: int) -> List[int]:
+def calc_extra_ports(user_id: int, port_base: Optional[int] = None) -> List[int]:
     """返回该用户可用的弹性端口列表（base+3 ~ base+9，共7个）"""
-    base = PORT_BASE + (user_id - 1) * 10
+    if not isinstance(user_id, int):
+        context = user_id
+        port_base = getattr(context, "port_base", None) or port_base
+        user_id = int(getattr(context, "user_id", 1))
+    base = PORT_BASE + (user_id - 1) * 10 if port_base is None else int(port_base)
     return list(range(base + 3, base + 10))
 
 
@@ -308,8 +331,8 @@ def get_current_progress(username: str) -> Dict:
 
 
 def _begin_progress_task(key: str, username: str, kind: str,
-                         target: str, step: str) -> Dict:
-    task = start_task(username, kind, target, step)
+                         target: str, step: str, instance_key: str = "default") -> Dict:
+    task = start_task(username, kind, target, step, instance_key=instance_key or "default")
     with _progress_task_lock:
         _progress_task_ids[key] = task["task_id"]
     return task
@@ -329,12 +352,12 @@ def _set_progress(username: str, step: str, detail: str = "", done: bool = False
     logger.info(f"[{username}] {step} {detail}")
 
 
-def get_pull_progress(username: str) -> dict:
-    return get_current_task(username, "both")
+def get_pull_progress(username: str, instance_key: str = "default") -> dict:
+    return get_current_task(username, "both", instance_key=instance_key or "default")
 
 
-def get_single_pull_progress(username: str, service: str) -> dict:
-    return get_current_task(username, service)
+def get_single_pull_progress(username: str, service: str, instance_key: str = "default") -> dict:
+    return get_current_task(username, service, instance_key=instance_key or "default")
 
 
 def _set_pull_progress(key: str, step: str, detail: str = "", done: bool = False, error: str = ""):
@@ -342,13 +365,13 @@ def _set_pull_progress(key: str, step: str, detail: str = "", done: bool = False
     logger.info(f"[pull:{key}] {step} {detail}")
 
 
-def write_astrbot_config(astrbot_dir: str, username: str):
+def write_astrbot_config(astrbot_dir: str, username: str, instance_key: str = "default"):
     """AstrBot 监听 6199 等待 NapCat 反向连接"""
     config_dir = os.path.join(astrbot_dir, "config")
     os.makedirs(config_dir, exist_ok=True)
     config = {
         "platform_settings": [{
-            "name": f"napcat_{username}",
+            "name": instance_container_name(username, "napcat", instance_key),
             "type": "aiocqhttp",
             "enable": True,
             "config": {"ws_reverse_host": "0.0.0.0", "ws_reverse_port": 6199}
@@ -578,10 +601,10 @@ def _configure_llonebot_connection(config: Dict[str, Any], ws_url: str,
 
 
 def _write_persistent_json(username: str, service: str, container_path: str,
-                           config: Dict[str, Any]) -> str:
+                           config: Dict[str, Any], instance_key: str = "default") -> str:
     """在服务停止后原子写入其持久卷，避免退出钩子用旧配置覆盖新值。"""
     normalized = container_path.replace("\\", "/")
-    service_root = os.path.abspath(os.path.join(DATA_DIR, username, service))
+    service_root = os.path.abspath(os.path.join(instance_data_root(username, instance_key), service))
     if service == "astrbot":
         destination = os.path.join(service_root, "cmd_config.json")
     elif service == "llonebot":
@@ -619,18 +642,20 @@ def _write_persistent_json(username: str, service: str, container_path: str,
     return destination
 
 
-def configure_bot_astrbot(username: str, bot_type: str, ws_url: str) -> Dict[str, Any]:
+def configure_bot_astrbot(username: str, bot_type: str, ws_url: str,
+                          instance_key: str = "default") -> Dict[str, Any]:
     if bot_type not in ("napcat", "llonebot"):
         return {"ok": False, "error": "不支持的 Bot 类型"}
-    status = get_instance_status(username)
+    status = (get_instance_status(username) if instance_key == "default"
+              else get_instance_context_status(username, instance_key))
     bot_label = "LLOneBot" if bot_type == "llonebot" else "NapCat"
     if status.get("astrbot") != "running" or status.get(bot_type) != "running":
         return {"ok": False, "error": f"AstrBot 和 {bot_label} 容器需要同时处于 running 状态"}
 
     client = get_client()
     try:
-        astrbot_container = client.containers.get(f"astrbot_{username}")
-        bot_container = client.containers.get(f"{bot_type}_{username}")
+        astrbot_container = client.containers.get(instance_container_name(username, "astrbot", instance_key))
+        bot_container = client.containers.get(instance_container_name(username, bot_type, instance_key))
     except Exception:
         return {"ok": False, "error": f"无法读取 AstrBot 或 {bot_label} 容器"}
 
@@ -703,15 +728,22 @@ done
         return {"ok": False, "error": f"停止容器以保存配置失败：{exc}"}
 
     try:
-        _write_persistent_json(username, bot_type, bot_config_path, bot_config)
-        _write_persistent_json(username, "astrbot", astrbot_config_path, astrbot_config)
+        if instance_key == "default":
+            _write_persistent_json(username, bot_type, bot_config_path, bot_config)
+            _write_persistent_json(username, "astrbot", astrbot_config_path, astrbot_config)
+        else:
+            _write_persistent_json(username, bot_type, bot_config_path, bot_config, instance_key)
+            _write_persistent_json(username, "astrbot", astrbot_config_path, astrbot_config, instance_key)
     except Exception as exc:
         for service, path, original in (
             (bot_type, bot_config_path, original_bot_config),
             ("astrbot", astrbot_config_path, original_astrbot_config),
         ):
             try:
-                _write_persistent_json(username, service, path, original)
+                if instance_key == "default":
+                    _write_persistent_json(username, service, path, original)
+                else:
+                    _write_persistent_json(username, service, path, original, instance_key)
             except Exception:
                 logger.exception("[%s] 回退 %s 一键连接配置失败", username, service)
         for container in stopped:
@@ -749,14 +781,15 @@ find /AstrBot /app /data /root -name 'cmd_config.json' -type f 2>/dev/null | sed
 ''')
 
 
-def reset_astrbot_dashboard_password(username: str) -> Dict[str, Any]:
-    status = get_instance_status(username)
+def reset_astrbot_dashboard_password(username: str, instance_key: str = "default") -> Dict[str, Any]:
+    status = (get_instance_status(username) if instance_key == "default"
+              else get_instance_context_status(username, instance_key))
     if status.get("astrbot") != "running":
         return {"ok": False, "error": "AstrBot 容器需要处于 running 状态"}
 
     client = get_client()
     try:
-        astrbot_container = client.containers.get(f"astrbot_{username}")
+        astrbot_container = client.containers.get(instance_container_name(username, "astrbot", instance_key))
     except Exception:
         return {"ok": False, "error": "无法读取 AstrBot 容器"}
 
@@ -789,11 +822,13 @@ def reset_astrbot_dashboard_password(username: str) -> Dict[str, Any]:
     except Exception as exc:
         return {"ok": False, "error": f"无法写入 AstrBot 配置文件：{config_path}；{exc}"}
 
-    restart_user_instance(username, "astrbot")
+    (restart_user_instance(username, "astrbot") if instance_key == "default" else
+     restart_instance_context(username, instance_key, "astrbot"))
     return {"ok": True, "config_path": config_path}
 
 
-def write_napcat_config(napcat_dir: str, username: str, astrbot_ws_port: int):
+def write_napcat_config(napcat_dir: str, username: str, astrbot_ws_port: int,
+                        instance_key: str = "default"):
     """
     NapCat 通过公网 IP + 对外端口连接到 AstrBot，完全绕过容器内部 hostname 解析。
     astrbot_ws_port 为宿主机上 AstrBot 6199 的对外映射端口。
@@ -813,7 +848,7 @@ def write_napcat_config(napcat_dir: str, username: str, astrbot_ws_port: int):
             "messagePostFormat": "array", "debug": False
         }],
         "wsReverseServers": [{
-            "name": f"astrbot_{username}", "enable": True,
+            "name": instance_container_name(username, "astrbot", instance_key), "enable": True,
             "url": ws_url,
             "heartInterval": 30000, "reconnectInterval": 5000, "token": ""
         }],
@@ -927,6 +962,158 @@ def create_user_instance_async(username: str, user_id: int, callback,
     return task
 
 
+def create_instance_context_async(username: str, user_id: int, instance_key: str,
+                                  storage_root: Optional[str], port_base: int,
+                                  bot_type: str, callback,
+                                  image_source_id: Optional[int] = None,
+                                  force_pull: bool = False,
+                                  extra_ports: Optional[List[Dict]] = None):
+    """创建非默认实例。所有命名/目录/端口均由实例上下文决定。"""
+    registries = resolve_image_registries(image_source_id)
+    key = f"{username}:{instance_key}:both"
+
+    def _run():
+        client = get_client()
+        try:
+            ensure_user_network()
+            ports = calc_ports(user_id, port_base)
+            root = instance_data_root(username, instance_key, storage_root)
+            astrbot_dir = os.path.join(root, "astrbot")
+            bot_dir = os.path.join(root, bot_type)
+            os.makedirs(astrbot_dir, exist_ok=True)
+            os.makedirs(bot_dir, exist_ok=True)
+            extra_ports = extra_ports or []
+            effective_ws = _effective_ws_port(extra_ports, ports["astrbot_ws"])
+            write_astrbot_config(astrbot_dir, username, instance_key)
+            if bot_type != "llonebot":
+                write_napcat_config(bot_dir, username, effective_ws, instance_key)
+            # NapCat/LLOneBot 在同一实例内互斥；切换类型时必须清理另一方。
+            for service in ("astrbot", "napcat", "llonebot"):
+                _force_remove(client, instance_container_name(username, service, instance_key))
+            images = [(LLONEBOT_IMAGE if bot_type == "llonebot" else NAPCAT_IMAGE,
+                       "LLOneBot" if bot_type == "llonebot" else "NapCat"),
+                      (ASTRBOT_IMAGE, "AstrBot")]
+            for image, label in images:
+                _set_pull_progress(key, f"正在准备 {label} 镜像...", "优先使用服务器本地已有镜像")
+                progress = lambda step, detail, _l=label: _set_pull_progress(key, step or f"正在准备 {_l} 镜像...", detail)
+                if force_pull:
+                    pull_with_fallback(client, image, progress, registries=registries)
+                else:
+                    ensure_local_image(client, image, progress, registries=registries)
+            empty = {}
+            ab_extra = {f"{ep['container_port']}/tcp": ep["host_port"] for ep in extra_ports if ep.get("service") == "astrbot"}
+            bot_extra = {f"{ep['container_port']}/tcp": ep["host_port"] for ep in extra_ports if ep.get("service") == bot_type}
+            bot_c = (_run_llonebot(client, username, user_id, ports, root, bot_extra, instance_key)
+                     if bot_type == "llonebot" else
+                     _run_napcat(client, username, user_id, ports, root, bot_extra, instance_key))
+            astrbot_name = instance_container_name(username, "astrbot", instance_key)
+            astrbot_c = client.containers.run(
+                ASTRBOT_IMAGE, name=astrbot_name, network=BOT_NETWORK,
+                hostname=astrbot_name,
+                ports={"6185/tcp": ports["astrbot_web"], "6199/tcp": ports["astrbot_ws"], **ab_extra},
+                volumes={**{astrbot_dir: {"bind": "/AstrBot/data", "mode": "rw"}}, **_TZ_VOL},
+                environment={**_astrbot_env(), **_TZ_ENV},
+                labels={**_traefik_labels(username, "astrbot", 6185),
+                        "platform_instance_key": instance_key},
+                detach=True, restart_policy={"Name": "unless-stopped"},
+                **_container_resource_kwargs(user_id, "astrbot"),
+            )
+            _set_pull_progress(key, "实例创建完成！", done=True)
+            result = {"astrbot_container_id": astrbot_c.id, "ports": ports}
+            result[f"{bot_type}_container_id"] = bot_c.id
+            callback(result)
+        except Exception as exc:
+            logger.exception("创建实例失败: %s/%s", username, instance_key)
+            _set_pull_progress(key, "创建失败", error=str(exc))
+            callback(None, str(exc))
+
+    task = _begin_progress_task(key, username, "instance_create", "both", "初始化中...", instance_key)
+    threading.Thread(target=_run, daemon=True).start()
+    return task
+
+
+def start_instance_context(username: str, instance_key: str, service: Optional[str] = None):
+    client = get_client()
+    names = ([instance_container_name(username, service, instance_key)] if service else
+             [instance_container_name(username, svc, instance_key) for svc in ("astrbot", "napcat", "llonebot")])
+    for name in names:
+        try:
+            client.containers.get(name).start()
+        except docker.errors.NotFound:
+            pass
+
+
+def stop_instance_context(username: str, instance_key: str, service: Optional[str] = None):
+    client = get_client()
+    names = ([instance_container_name(username, service, instance_key)] if service else
+             [instance_container_name(username, svc, instance_key) for svc in ("astrbot", "napcat", "llonebot")])
+    for name in names:
+        try:
+            client.containers.get(name).stop(timeout=10)
+        except docker.errors.NotFound:
+            pass
+
+
+def restart_instance_context(username: str, instance_key: str, service: Optional[str] = None):
+    client = get_client()
+    names = ([instance_container_name(username, service, instance_key)] if service else
+             [instance_container_name(username, svc, instance_key) for svc in ("astrbot", "napcat", "llonebot")])
+    for name in names:
+        try:
+            client.containers.get(name).restart(timeout=10)
+        except docker.errors.NotFound:
+            pass
+
+
+def delete_instance_context(username: str, instance_key: str, service: Optional[str] = None):
+    client = get_client()
+    names = ([instance_container_name(username, service, instance_key)] if service else
+             [instance_container_name(username, svc, instance_key) for svc in ("astrbot", "napcat", "llonebot")])
+    for name in names:
+        try:
+            c = client.containers.get(name)
+            c.stop(timeout=5); c.remove(force=True)
+        except docker.errors.NotFound:
+            pass
+
+
+def get_instance_context_status(username: str, instance_key: str) -> Dict[str, str]:
+    client = get_client()
+    result = {}
+    for service in ("astrbot", "napcat", "llonebot"):
+        try:
+            c = client.containers.get(instance_container_name(username, service, instance_key))
+            c.reload(); result[service] = c.status
+        except docker.errors.NotFound:
+            result[service] = "not_found"
+        except Exception:
+            result[service] = "error"
+    return result
+
+
+def get_context_container_logs(username: str, instance_key: str, service: str, lines: int = 200) -> str:
+    try:
+        c = get_client().containers.get(instance_container_name(username, service, instance_key))
+        return c.logs(tail=lines, timestamps=True).decode("utf-8", errors="replace")
+    except docker.errors.NotFound:
+        return "容器不存在"
+    except Exception as exc:
+        return f"获取日志失败: {exc}"
+
+
+def recreate_instance_context_async(username: str, user_id: int, instance_key: str,
+                                    storage_root: Optional[str], port_base: int,
+                                    bot_type: str, image_source_id: Optional[int] = None,
+                                    extra_ports: Optional[List[Dict]] = None,
+                                    force_pull: bool = True):
+    """实例上下文重建入口。镜像准备和容器命名均绑定到 selected instance。"""
+    def callback(_result, _error=None):
+        return None
+    return create_instance_context_async(username, user_id, instance_key, storage_root,
+                                         port_base, bot_type, callback, image_source_id,
+                                         force_pull=force_pull, extra_ports=extra_ports)
+
+
 def _force_remove(client, name: str):
     """停止并强制删除容器，等待端口释放，容器不存在时静默忽略"""
     try:
@@ -944,24 +1131,26 @@ def _force_remove(client, name: str):
         pass
 
 
-def _run_napcat(client, username: str, user_id: int, ports: Dict, data_dir: str, nc_extra: Dict):
+def _run_napcat(client, username: str, user_id: int, ports: Dict, data_dir: str, nc_extra: Dict,
+                instance_key: str = "default"):
     """创建并启动 NapCat 容器（端口冲突前请先调用 _force_remove 清理旧容器）"""
     napcat_dir = os.path.join(data_dir, "napcat")
     napcat_ports = {"6099/tcp": ports["napcat_web"]}
     napcat_ports.update(nc_extra)
     return client.containers.run(
-        NAPCAT_IMAGE, name=f"napcat_{username}",
-        network=BOT_NETWORK, hostname=f"napcat_{username}",
+        NAPCAT_IMAGE, name=instance_container_name(username, "napcat", instance_key),
+        network=BOT_NETWORK, hostname=instance_container_name(username, "napcat", instance_key),
         ports=napcat_ports,
         volumes={**{napcat_dir: {"bind": "/root/.config/QQ", "mode": "rw"}}, **_TZ_VOL},
         environment={**{"WEBUI_PORT": "6099"}, **_TZ_ENV},
-        labels=_traefik_labels(username, "napcat", 6099),
+        labels={**_traefik_labels(username, "napcat", 6099), "platform_instance_key": instance_key or "default"},
         detach=True, restart_policy={"Name": "unless-stopped"},
         **_container_resource_kwargs(user_id, "napcat"),
     )
 
 
-def _run_llonebot(client, username: str, user_id: int, ports: Dict, data_dir: str, ll_extra: Dict):
+def _run_llonebot(client, username: str, user_id: int, ports: Dict, data_dir: str, ll_extra: Dict,
+                  instance_key: str = "default"):
     """创建并启动 LLOneBot 容器（端口冲突前请先调用 _force_remove 清理旧容器）"""
     llonebot_dir = os.path.join(data_dir, "llonebot")
     llonebot_data_dir = os.path.join(llonebot_dir, ".llonebot-data")
@@ -972,7 +1161,7 @@ def _run_llonebot(client, username: str, user_id: int, ports: Dict, data_dir: st
     # 容器网络端口，避免重建阶段与 llonebot_web_proxy_<username> 冲突。
     has_web_proxy = False
     try:
-        client.containers.get(f"llonebot_web_proxy_{username}")
+        client.containers.get(f"llonebot_web_proxy_{username}" if instance_key == "default" else f"llonebot_web_proxy_{username}_{instance_key}")
         has_web_proxy = True
     except Exception:
         pass
@@ -1001,15 +1190,15 @@ def _run_llonebot(client, username: str, user_id: int, ports: Dict, data_dir: st
         environment["QUICK_LOGIN_QQ"] = account_ids[0]
 
     return client.containers.run(
-        LLONEBOT_IMAGE, name=f"llonebot_{username}",
-        network=BOT_NETWORK, hostname=f"llonebot_{username}",
+        LLONEBOT_IMAGE, name=instance_container_name(username, "llonebot", instance_key),
+        network=BOT_NETWORK, hostname=instance_container_name(username, "llonebot", instance_key),
         ports=llonebot_ports,
         volumes={**{
             llonebot_dir: {"bind": "/root/.config/QQ", "mode": "rw"},
             llonebot_data_dir: {"bind": "/root/llonebot/data", "mode": "rw"},
         }, **_TZ_VOL},
         environment=environment,
-        labels=_traefik_labels(username, "llonebot", 3080),
+        labels={**_traefik_labels(username, "llonebot", 3080), "platform_instance_key": instance_key or "default"},
         detach=True, restart_policy={"Name": "unless-stopped"},
         **_container_resource_kwargs(user_id, "llonebot"),
     )
@@ -1567,6 +1756,7 @@ def get_all_instances_status() -> Dict[str, Dict[str, str]]:
             name = c.name
             username = (c.labels or {}).get("platform_user", "")
             service  = (c.labels or {}).get("platform_service", "")
+            selected_instance_key = (c.labels or {}).get("platform_instance_key", "default") or "default"
 
             # Fallback: detect by container name pattern {service}_{username}
             if not username or not service:
@@ -1579,17 +1769,20 @@ def get_all_instances_status() -> Dict[str, Dict[str, str]]:
             if username and service:
                 if username not in result:
                     result[username] = {}
-                result[username][service] = c.status
+                if selected_instance_key == "default":
+                    result[username][service] = c.status
+                else:
+                    result[username].setdefault("by_instance", {}).setdefault(selected_instance_key, {})[service] = c.status
     except Exception as e:
         logger.error(f"获取实例状态失败: {e}")
     return result
 
 
-def get_container_stats(username: str, service: str) -> dict:
+def get_container_stats(username: str, service: str, instance_key: str = "default") -> dict:
     """获取容器的 CPU、内存、网络、磁盘 IO 统计"""
     try:
         client = get_client()
-        container = client.containers.get(f"{service}_{username}")
+        container = client.containers.get(instance_container_name(username, service, instance_key))
         if container.status != "running":
             return {"error": "容器未运行"}
 
@@ -1642,10 +1835,11 @@ def get_container_stats(username: str, service: str) -> dict:
         return {"error": str(e)}
 
 
-def get_data_dir_size(username: str, service: str) -> int:
+def get_data_dir_size(username: str, service: str, instance_key: str = "default",
+                      storage_root: Optional[str] = None) -> int:
     """获取用户数据目录大小（字节），读取宿主机目录"""
     import subprocess
-    path = os.path.join(DATA_DIR, username, service)
+    path = os.path.join(instance_data_root(username, instance_key, storage_root), service)
     if not os.path.isdir(path):
         return 0
     try:

@@ -27,7 +27,9 @@ from .auth import (
 from .docker_manager import (
     stop_user_instance, start_user_instance, restart_user_instance,
     delete_user_instance, get_all_instances_status, update_user_memory_limits,
+    get_instance_context_status,
 )
+from .instance_context import instance_key
 from .email_service import send_email, DEFAULT_EMAIL_TEMPLATES, EMAIL_TEMPLATE_VARIABLES
 from .hub_sync import _push_ban_to_hub, _push_unban_to_hub
 
@@ -146,12 +148,13 @@ async def admin_page(request: Request, user: User = Depends(require_admin),
     all_stat = get_all_instances_status()
     instance_data = []
     for u in users:
-        if u.instance:
-            instance_data.append({
-                "username": u.username,
-                "instance": u.instance,
-                "status":   all_stat.get(u.username, {}),
-            })
+        for item in list(getattr(u, "instances", []) or []):
+            key = instance_key(item)
+            try:
+                status = get_instance_context_status(u.username, key) if key != "default" else all_stat.get(u.username, {})
+            except Exception:
+                status = {}
+            instance_data.append({"username": u.username, "instance": item, "status": status})
     astrbot_running = sum(1 for d in instance_data if d["status"].get("astrbot") == "running")
     napcat_running  = sum(1 for d in instance_data if d["status"].get("napcat") == "running")
     llonebot_running = sum(1 for d in instance_data if d["status"].get("llonebot") == "running")
@@ -271,6 +274,42 @@ async def admin_toggle_user(user_id: int, user: User = Depends(require_admin),
     return RedirectResponse("/admin", 302)
 
 
+@router.post("/admin/user/{user_id}/multi_instance")
+async def admin_set_multi_instance(user_id: int, request: Request,
+                                   user: User = Depends(require_admin),
+                                   db: Session = Depends(get_db)):
+    """逐用户开放多实例并设置上限；上限不得低于已有实例数。"""
+    target = db.query(User).filter_by(id=user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    try:
+        body = await request.json()
+    except Exception:
+        form = await request.form()
+        body = dict(form)
+    raw_enabled = body.get("enabled", False)
+    enabled = raw_enabled in (True, 1, "1", "true", "True", "on", "yes")
+    try:
+        max_instances = int(body.get("max_instances", 2 if enabled else 1))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="max_instances 必须是整数")
+    count = db.query(Instance).filter_by(user_id=target.id).count()
+    if max_instances < count:
+        raise HTTPException(status_code=400, detail=f"实例上限不能小于现有实例数量（{count}）")
+    if target.is_admin:
+        enabled = True
+        max_instances = max(2, max_instances, count)
+    else:
+        max_instances = max(2 if enabled else 1, max_instances)
+    target.multi_instance_enabled = enabled
+    target.max_instances = max_instances
+    db.commit()
+    return JSONResponse({"ok": True, "user_id": target.id,
+                         "enabled": bool(target.multi_instance_enabled),
+                         "max_instances": target.max_instances,
+                         "instance_count": count})
+
+
 @router.post("/admin/user/{user_id}/reset_password")
 async def admin_reset_password(user_id: int, user: User = Depends(require_admin),
                                db: Session = Depends(get_db)):
@@ -296,7 +335,8 @@ async def admin_delete_user(user_id: int, user: User = Depends(require_admin),
     u = db.query(User).filter_by(id=user_id).first()
     if u and not u.is_admin:
         delete_user_instance(u.username)
-        if u.instance: db.delete(u.instance)
+        for instance in list(getattr(u, "instances", []) or []):
+            db.delete(instance)
         db.query(UserMessage).filter_by(user_id=u.id).delete(synchronize_session=False)
         bu = db.query(BannedUser).filter_by(username=u.username).first()
         if bu:

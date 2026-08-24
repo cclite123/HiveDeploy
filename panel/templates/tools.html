@@ -185,6 +185,19 @@
 
 {% block scripts %}
 <script>
+const INSTANCE_ID = '{{ instance_id or "" }}';
+(function bindInstanceScope(){
+  if (!INSTANCE_ID) return;
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = (input, init) => {
+    if (typeof input === 'string' && !input.includes('instance_id=')) {
+      if (input.startsWith('/api/instance') || input.startsWith('/api/tools/install-astrbot-plugin') || input.startsWith('/api/tools/reset-astrbot-password')) {
+        input += (input.includes('?') ? '&' : '?') + 'instance_id=' + encodeURIComponent(INSTANCE_ID);
+      }
+    }
+    return nativeFetch(input, init);
+  };
+})();
 async function resetAstrbotPassword(){
   const btn=document.getElementById('resetAstrbotBtn');
   if(!btn)return;

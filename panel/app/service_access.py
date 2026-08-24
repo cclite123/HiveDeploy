@@ -5,9 +5,9 @@ MANAGED_SERVICES = ("astrbot", "napcat", "llonebot")
 BOT_SERVICES = ("napcat", "llonebot")
 
 
-def available_instance_services(user) -> tuple[str, ...]:
-    """Return services actually deployed for a user's current instance."""
-    instance = getattr(user, "instance", None)
+def available_instance_services(user, instance=None) -> tuple[str, ...]:
+    """Return services actually deployed for a selected instance."""
+    instance = instance if instance is not None else getattr(user, "instance", None)
     if not instance:
         return ()
     services = ["astrbot"]
@@ -17,6 +17,6 @@ def available_instance_services(user) -> tuple[str, ...]:
     return tuple(services)
 
 
-def ensure_instance_service(user, service: str) -> None:
-    if service not in MANAGED_SERVICES or service not in available_instance_services(user):
+def ensure_instance_service(user, service: str, instance=None) -> None:
+    if service not in MANAGED_SERVICES or service not in available_instance_services(user, instance):
         raise HTTPException(status_code=404, detail="服务未部署")
