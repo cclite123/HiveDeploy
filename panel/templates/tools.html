@@ -134,6 +134,52 @@
       </div>
     </div>
   </div>
+
+  <div class="card tool-card-compact mt-3">
+    <div class="card-body">
+      <div class="tool-row">
+        <div class="tool-icon magic"><i class="bi bi-puzzle"></i></div>
+        <div class="tool-meta">
+          <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+            <span class="fw-semibold" data-i18n="tools.plugin_install_title">一键安装 AstrBot 插件</span>
+            {% if install_astrbot_plugin_badge %}
+            <span class="badge bg-secondary">{{ install_astrbot_plugin_badge }}</span>
+            {% endif %}
+            {% if install_astrbot_plugin_access == 'vip' %}
+            <span class="badge bg-warning text-dark"><i class="bi bi-stars me-1"></i><span data-i18n="tools.vip_only">VIP专属</span></span>
+            {% elif install_astrbot_plugin_access == 'limited' %}
+            <span class="badge bg-info text-dark"><i class="bi bi-clock-history me-1"></i><span data-i18n="tools.limited_free">限免</span></span>
+            {% else %}
+            <span class="badge bg-success"><i class="bi bi-unlock me-1"></i><span data-i18n="tools.free">免费</span></span>
+            {% endif %}
+            {% if astrbot_plugin_installed %}
+            <span class="badge bg-success" data-i18n="tools.plugin_installed">已安装</span>
+            {% endif %}
+            <span class="badge bg-{{ status_badge(container_status.get('astrbot', 'unknown')) }}">AstrBot {{ container_status.get('astrbot', 'unknown') }}</span>
+          </div>
+          <div class="text-secondary" style="font-size:.82rem;" data-i18n="tools.plugin_install_desc_short">从管理员白名单安装或更新小小修仙，保留配置与运行数据并自动回滚失败更新。</div>
+          <div class="text-secondary mt-1" style="font-size:.76rem;">
+            <i class="bi bi-github me-1"></i><a href="{{ astrbot_plugin_spec.repository }}" target="_blank" rel="noopener noreferrer">{{ astrbot_plugin_spec.repository }}</a>
+          </div>
+          {% if install_astrbot_plugin_access == 'vip' and not user_is_vip %}
+          <div class="text-info mt-1" style="font-size:.78rem;"><i class="bi bi-lock me-1"></i><span data-i18n="tools.vip_required">该快捷工具当前仅限 VIP 用户使用。</span></div>
+          {% elif not instance %}
+          <div class="text-secondary mt-1" style="font-size:.78rem;" data-i18n="tools.no_instance">当前账号还没有实例，无法使用快捷工具。</div>
+          {% elif container_status.get('astrbot') != 'running' %}
+          <div class="text-secondary mt-1" style="font-size:.78rem;" data-i18n="tools.astrbot_not_running">AstrBot 容器未运行，请先启动 AstrBot。</div>
+          {% endif %}
+        </div>
+        <div class="tool-actions">
+          <button class="btn btn-info text-white btn-action" id="installAstrbotPluginBtn" onclick="installAstrbotPlugin()" {% if not instance or container_status.get('astrbot') != 'running' or not install_astrbot_plugin_allowed %}disabled{% endif %}>
+            <i class="bi bi-download me-1"></i><span>{% if astrbot_plugin_installed %}<span data-i18n="tools.plugin_update_now">更新插件</span>{% else %}<span data-i18n="tools.plugin_install_now">一键安装</span>{% endif %}</span>
+          </button>
+          <a href="/logs/astrbot" class="btn btn-outline-secondary btn-action" data-i18n-title="tools.open_astrbot_logs" title="查看 AstrBot 日志">
+            <i class="bi bi-terminal me-1"></i><span data-i18n="tools.open_astrbot_logs">查看日志</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}
 
@@ -185,6 +231,55 @@ async function autoConfigBot(){
   }finally{
     btn.disabled=false;
     btn.innerHTML=old;
+  }
+}
+
+const astrbotPluginKey='{{ astrbot_plugin_spec.key }}';
+
+function setPluginInstallButton(label, disabled=true){
+  const btn=document.getElementById('installAstrbotPluginBtn');
+  if(!btn)return;
+  btn.disabled=disabled;
+  const labelNode=btn.querySelector('span');
+  if(labelNode)labelNode.textContent=label;
+}
+
+async function pollAstrbotPluginInstall(){
+  while(true){
+    await new Promise(resolve=>setTimeout(resolve,1000));
+    const resp=await fetch(`/api/tools/install-astrbot-plugin/${encodeURIComponent(astrbotPluginKey)}/progress`);
+    const task=await resp.json();
+    if(!resp.ok)throw new Error(task.error || '无法读取安装进度');
+    if(task.running){
+      setPluginInstallButton(task.step || (window.__i18n?window.__i18n('tools.plugin_installing','安装中...'):'安装中...'));
+      continue;
+    }
+    if(task.error)throw new Error(task.error);
+    if(task.done){
+      alert(task.step || (window.__i18n?window.__i18n('tools.plugin_install_success','插件安装完成'):'插件安装完成'));
+      location.reload();
+      return;
+    }
+    throw new Error(window.__i18n?window.__i18n('tools.plugin_install_interrupted','安装任务已中断'):'安装任务已中断');
+  }
+}
+
+async function installAstrbotPlugin(){
+  const installed={{ 'true' if astrbot_plugin_installed else 'false' }};
+  const confirmKey=installed?'tools.plugin_update_confirm':'tools.plugin_install_confirm';
+  const fallback=installed?'将更新小小修仙插件，保留现有配置与数据，并重启 AstrBot。确定继续？':'将安装小小修仙插件及其依赖，并重启 AstrBot。确定继续？';
+  if(!confirm(window.__i18n?window.__i18n(confirmKey,fallback):fallback))return;
+  setPluginInstallButton(window.__i18n?window.__i18n('tools.plugin_installing','安装中...'):'安装中...');
+  try{
+    const resp=await fetch(`/api/tools/install-astrbot-plugin/${encodeURIComponent(astrbotPluginKey)}`,{method:'POST'});
+    const data=await resp.json();
+    if(!resp.ok && resp.status!==409)throw new Error(data.error || '启动安装失败');
+    if(resp.status===409 && data.task?.target!==`plugin:${astrbotPluginKey}`)throw new Error(data.error || '已有后台任务正在执行');
+    if(!data.ok && !data.task)throw new Error(data.error || '启动安装失败');
+    await pollAstrbotPluginInstall();
+  }catch(e){
+    alert((window.__i18n?window.__i18n('tools.plugin_install_failed','插件安装失败'):'插件安装失败')+': '+e.message);
+    location.reload();
   }
 }
 </script>

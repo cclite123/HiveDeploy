@@ -17,6 +17,10 @@ from .docker_manager import (
     get_instance_status, calc_extra_ports, detect_public_ip,
     start_user_instance, reset_astrbot_dashboard_password,
 )
+from .plugin_installer import (
+    get_plugin_spec, is_astrbot_plugin_installed, start_astrbot_plugin_install,
+)
+from .progress_store import TaskAlreadyRunning, get_current_task
 from .models import VerificationCode
 from .email_service import send_renewal_notification
 
@@ -148,16 +152,29 @@ async def quick_tools(request: Request,
     if _site_bool(db, "quick_tool_reset_astrbot_password_vip_only", False):
         reset_access = "vip"
     auto_config_access = _tool_access(db, "quick_tool_auto_config_access", "limited")
+    plugin_access = _tool_access(db, "quick_tool_install_astrbot_plugin_access", "limited")
+    plugin_spec = get_plugin_spec("xiao-xiuxian")
+    plugin_installed = False
+    if instance:
+        try:
+            plugin_installed = is_astrbot_plugin_installed(user.username, plugin_spec.key)
+        except Exception:
+            plugin_installed = False
     return templates.TemplateResponse(request, "tools.html", {
         "user": user,
         "instance": instance,
         "container_status": container_status,
         "reset_astrbot_password_access": reset_access,
         "auto_config_access": auto_config_access,
+        "install_astrbot_plugin_access": plugin_access,
         "reset_astrbot_password_badge": _site_value(db, "quick_tool_reset_astrbot_password_badge", ""),
         "auto_config_badge": _site_value(db, "quick_tool_auto_config_badge", "Beta"),
+        "install_astrbot_plugin_badge": _site_value(db, "quick_tool_install_astrbot_plugin_badge", "New"),
         "reset_astrbot_password_allowed": _tool_allowed(reset_access, user),
         "auto_config_allowed": _tool_allowed(auto_config_access, user),
+        "install_astrbot_plugin_allowed": _tool_allowed(plugin_access, user),
+        "astrbot_plugin_spec": plugin_spec,
+        "astrbot_plugin_installed": plugin_installed,
         "user_is_vip": _is_vip_user(user),
     })
 
@@ -174,6 +191,46 @@ async def reset_astrbot_password_tool(user: User = Depends(get_current_user_from
     if not instance:
         return JSONResponse({"ok": False, "error": "实例不存在"})
     return JSONResponse(reset_astrbot_dashboard_password(user.username))
+
+
+@router.post("/api/tools/install-astrbot-plugin/{plugin_key}")
+async def install_astrbot_plugin_tool(
+    plugin_key: str,
+    user: User = Depends(get_current_user_from_cookie),
+    db: Session = Depends(get_db),
+):
+    try:
+        spec = get_plugin_spec(plugin_key)
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=404)
+    access = _tool_access(db, "quick_tool_install_astrbot_plugin_access", "limited")
+    if not _tool_allowed(access, user):
+        return JSONResponse({"ok": False, "error": "该快捷工具仅限 VIP 用户使用"}, status_code=403)
+    instance = db.query(Instance).filter_by(user_id=user.id).first()
+    if not instance:
+        return JSONResponse({"ok": False, "error": "实例不存在"}, status_code=404)
+    if get_instance_status(user.username).get("astrbot") != "running":
+        return JSONResponse({"ok": False, "error": "AstrBot 容器需要处于 running 状态"}, status_code=409)
+    try:
+        task = start_astrbot_plugin_install(user.username, spec.key)
+    except TaskAlreadyRunning as exc:
+        return JSONResponse({"ok": False, "error": str(exc), "task": exc.task}, status_code=409)
+    except Exception as exc:
+        logger.exception("启动 AstrBot 插件安装失败 user=%s plugin=%s", user.username, spec.key)
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+    return JSONResponse({"ok": True, "task_id": task["task_id"], "plugin": spec.display_name})
+
+
+@router.get("/api/tools/install-astrbot-plugin/{plugin_key}/progress")
+async def install_astrbot_plugin_progress(
+    plugin_key: str,
+    user: User = Depends(get_current_user_from_cookie),
+):
+    try:
+        spec = get_plugin_spec(plugin_key)
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=404)
+    return JSONResponse(get_current_task(user.username, target=f"plugin:{spec.key}"))
 
 
 # ════════════════════════════════════════════════════════════

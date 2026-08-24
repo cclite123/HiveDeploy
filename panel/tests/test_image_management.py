@@ -143,6 +143,39 @@ class ImageSourceTests(unittest.TestCase):
             client.api.pulls,
         )
 
+    def test_new_instance_uses_local_image_without_pulling(self):
+        from app.docker_manager import ensure_local_image
+
+        class Images:
+            def get(self, image):
+                return SimpleNamespace(id="sha256:local", short_id="sha256:local")
+
+        client = SimpleNamespace(images=Images())
+        progress = []
+        with patch("app.docker_manager.pull_with_fallback") as pull:
+            result = ensure_local_image(client, "soulter/astrbot:latest", lambda *item: progress.append(item))
+
+        self.assertEqual("soulter/astrbot:latest", result)
+        pull.assert_not_called()
+        self.assertIn("本地已有", progress[0][0])
+
+    def test_new_instance_pulls_only_when_local_image_is_missing(self):
+        import docker
+        from app.docker_manager import ensure_local_image
+
+        class Images:
+            def get(self, image):
+                raise docker.errors.ImageNotFound("missing")
+
+        client = SimpleNamespace(images=Images())
+        progress = []
+        with patch("app.docker_manager.pull_with_fallback", return_value="mirror/soulter/astrbot:latest") as pull:
+            result = ensure_local_image(client, "soulter/astrbot:latest", lambda *item: progress.append(item))
+
+        self.assertEqual("mirror/soulter/astrbot:latest", result)
+        pull.assert_called_once()
+        self.assertIn("没有", progress[0][0])
+
 
 class ImageAdminPageTests(unittest.TestCase):
     @classmethod

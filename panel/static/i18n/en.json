@@ -1015,7 +1015,18 @@
     "auto_config_confirm": "This overwrites AstrBot and {bot_type} reverse WebSocket settings, enables self-message reporting and debug logging, and restarts both containers. Continue?",
     "auto_config_working": "Configuring...",
     "auto_config_success": "Configuration complete. Self-message reporting and debug logging enabled; AstrBot and {bot_type} restarted.\nWS URL: {ws_url}",
-    "auto_config_failed": "Configuration failed"
+    "auto_config_failed": "Configuration failed",
+    "plugin_install_title": "Install AstrBot Plugin",
+    "plugin_install_desc_short": "Install or update XiaoXiuxian from the admin allowlist while preserving configuration and runtime data, with automatic rollback on failure.",
+    "plugin_installed": "Installed",
+    "plugin_install_now": "Install",
+    "plugin_update_now": "Update plugin",
+    "plugin_install_confirm": "Install XiaoXiuxian and its dependencies, then restart AstrBot?",
+    "plugin_update_confirm": "Update XiaoXiuxian, preserve its configuration and data, then restart AstrBot?",
+    "plugin_installing": "Installing...",
+    "plugin_install_success": "Plugin installation complete",
+    "plugin_install_failed": "Plugin installation failed",
+    "plugin_install_interrupted": "Installation task was interrupted"
   },
   "admin_tools": {
     "title": "Quick Tool Settings",

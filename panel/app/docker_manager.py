@@ -228,6 +228,20 @@ def pull_with_fallback(client, image: str, progress_cb: Callable[[str, str], Non
 
     raise Exception(f"所有镜像源均拉取失败，最后错误: {last_error}")
 
+
+def ensure_local_image(client, image: str, progress_cb: Callable[[str, str], None],
+                       registries: Optional[List[Optional[str]]] = None) -> str:
+    """新建实例时优先使用本地已有镜像，只有缺失时才下载。"""
+    try:
+        local_image = client.images.get(image)
+    except docker.errors.ImageNotFound:
+        progress_cb(f"本地没有 {image}，开始下载镜像...", "")
+        return pull_with_fallback(client, image, progress_cb, registries=registries)
+
+    image_id = getattr(local_image, "short_id", "") or getattr(local_image, "id", "")
+    progress_cb(f"使用服务器本地已有 {image} 镜像...", image_id)
+    return image
+
 PANEL_NETWORK = os.environ.get("PANEL_NETWORK", "bot_panel_net")
 
 _progress_task_ids: Dict[str, str] = {}
@@ -849,12 +863,12 @@ def _create_instance_background(username: str, user_id: int, extra_ports: List[D
             except docker.errors.NotFound:
                 pass
 
-        # 拉取镜像
+        # 新建实例优先复用服务器本地镜像，缺失时才下载
         for image, label in [(bot_image, bot_label), (ASTRBOT_IMAGE, "AstrBot")]:
-            _set_progress(username, f"正在拉取 {label} 镜像...", "这可能需要几分钟")
-            pull_with_fallback(
+            _set_progress(username, f"正在准备 {label} 镜像...", "优先使用服务器本地已有镜像")
+            ensure_local_image(
                 client, image,
-                lambda step, detail, _l=label: _set_progress(username, step or f"正在拉取 {_l} 镜像...", detail),
+                lambda step, detail, _l=label: _set_progress(username, step or f"正在准备 {_l} 镜像...", detail),
                 registries=registries,
             )
 
@@ -1208,10 +1222,10 @@ def create_single_service_async(username: str, user_id: int, service: str,
                 os.makedirs(astrbot_dir, exist_ok=True)
                 write_astrbot_config(astrbot_dir, username)
 
-                _set_progress(username, "正在拉取 AstrBot 镜像...")
-                pull_with_fallback(
+                _set_progress(username, "正在准备 AstrBot 镜像...")
+                ensure_local_image(
                     client, ASTRBOT_IMAGE,
-                    lambda step, detail: _set_progress(username, step or "正在拉取 AstrBot 镜像...", detail),
+                    lambda step, detail: _set_progress(username, step or "正在准备 AstrBot 镜像...", detail),
                     registries=registries,
                 )
 
@@ -1239,10 +1253,10 @@ def create_single_service_async(username: str, user_id: int, service: str,
                 napcat_dir = os.path.join(data_dir, "napcat")
                 os.makedirs(napcat_dir, exist_ok=True)
                 write_napcat_config(napcat_dir, username, effective_ws)
-                _set_progress(username, "正在拉取 NapCat 镜像...")
-                pull_with_fallback(
+                _set_progress(username, "正在准备 NapCat 镜像...")
+                ensure_local_image(
                     client, NAPCAT_IMAGE,
-                    lambda step, detail: _set_progress(username, step or "正在拉取 NapCat 镜像...", detail),
+                    lambda step, detail: _set_progress(username, step or "正在准备 NapCat 镜像...", detail),
                     registries=registries,
                 )
                 _run_napcat(client, username, user_id, ports, data_dir, nc_extra)
@@ -1253,10 +1267,10 @@ def create_single_service_async(username: str, user_id: int, service: str,
                 _force_remove(client, f"llonebot_{username}")
                 llonebot_dir = os.path.join(data_dir, "llonebot")
                 os.makedirs(llonebot_dir, exist_ok=True)
-                _set_progress(username, "正在拉取 LLOneBot 镜像...")
-                pull_with_fallback(
+                _set_progress(username, "正在准备 LLOneBot 镜像...")
+                ensure_local_image(
                     client, LLONEBOT_IMAGE,
-                    lambda step, detail: _set_progress(username, step or "正在拉取 LLOneBot 镜像...", detail),
+                    lambda step, detail: _set_progress(username, step or "正在准备 LLOneBot 镜像...", detail),
                     registries=registries,
                 )
                 _run_llonebot(client, username, user_id, ports, data_dir, ll_extra)

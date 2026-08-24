@@ -77,6 +77,25 @@
                        style="background:var(--bg-input); border-color:var(--border-default); color:var(--text-primary); border-radius:var(--radius-sm);">
               </td>
             </tr>
+            <tr>
+              <td class="align-middle">
+                <div class="fw-semibold" data-i18n="tools.plugin_install_title">一键安装 AstrBot 插件</div>
+                <div class="text-secondary" style="font-size:.78rem;" data-i18n="tools.plugin_install_desc_short">从管理员白名单安装或更新小小修仙，保留配置与运行数据并自动回滚失败更新。</div>
+              </td>
+              <td class="align-middle">
+                <select class="form-select form-select-sm" name="install_astrbot_plugin_access"
+                        style="background:var(--bg-input); border-color:var(--border-default); color:var(--text-primary); border-radius:var(--radius-sm);">
+                  <option value="free" {% if install_astrbot_plugin_access == 'free' %}selected{% endif %} data-i18n="admin.tool_access_free">免费</option>
+                  <option value="limited" {% if install_astrbot_plugin_access == 'limited' %}selected{% endif %} data-i18n="admin.tool_access_limited">限免</option>
+                  <option value="vip" {% if install_astrbot_plugin_access == 'vip' %}selected{% endif %} data-i18n="admin.tool_access_vip">VIP专属</option>
+                </select>
+              </td>
+              <td class="align-middle">
+                <input class="form-control form-control-sm" name="install_astrbot_plugin_badge" maxlength="24"
+                       value="{{ install_astrbot_plugin_badge }}" data-i18n-placeholder="admin_tools.badge_placeholder" placeholder="留空不显示"
+                       style="background:var(--bg-input); border-color:var(--border-default); color:var(--text-primary); border-radius:var(--radius-sm);">
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>

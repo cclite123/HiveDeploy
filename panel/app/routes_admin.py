@@ -402,16 +402,20 @@ async def admin_set_memory_limits(user_id: int, request: Request,
 async def admin_save_tool_settings(
     reset_astrbot_password_access: str = Form("limited"),
     auto_config_access: str = Form("limited"),
+    install_astrbot_plugin_access: str = Form("limited"),
     reset_astrbot_password_badge: str = Form(""),
     auto_config_badge: str = Form("Beta"),
+    install_astrbot_plugin_badge: str = Form("New"),
     user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     values = {
         "quick_tool_reset_astrbot_password_access": _normalize_tool_access(reset_astrbot_password_access),
         "quick_tool_auto_config_access": _normalize_tool_access(auto_config_access),
+        "quick_tool_install_astrbot_plugin_access": _normalize_tool_access(install_astrbot_plugin_access),
         "quick_tool_reset_astrbot_password_badge": reset_astrbot_password_badge.strip()[:24],
         "quick_tool_auto_config_badge": auto_config_badge.strip()[:24],
+        "quick_tool_install_astrbot_plugin_badge": install_astrbot_plugin_badge.strip()[:24],
         "quick_tool_reset_astrbot_password_vip_only": "true" if reset_astrbot_password_access == "vip" else "false",
     }
     for key, value in values.items():
@@ -435,8 +439,10 @@ async def admin_tools_page(request: Request, user: User = Depends(require_admin)
         "user": user,
         "reset_astrbot_password_access": reset_access,
         "auto_config_access": _tool_access_value(db, "quick_tool_auto_config_access", "limited"),
+        "install_astrbot_plugin_access": _tool_access_value(db, "quick_tool_install_astrbot_plugin_access", "limited"),
         "reset_astrbot_password_badge": _site_value(db, "quick_tool_reset_astrbot_password_badge", ""),
         "auto_config_badge": _site_value(db, "quick_tool_auto_config_badge", "Beta"),
+        "install_astrbot_plugin_badge": _site_value(db, "quick_tool_install_astrbot_plugin_badge", "New"),
     })
 
 
