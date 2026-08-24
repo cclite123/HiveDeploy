@@ -71,17 +71,17 @@
     {% set active_bot_type = (instance.bot_type or 'napcat') if instance else none %}
     {% if service == 'astrbot' %}
     {% if active_bot_type == 'napcat' %}
-    <a href="/terminal/napcat" class="btn btn-sm btn-outline-secondary"><span data-i18n="terminal.switch_to" data-i18n-params='{"service":"NapCat"}'>切换到 NapCat</span></a>
+    <a href="/terminal/napcat?instance_id={{ instance_id }}" class="btn btn-sm btn-outline-secondary"><span data-i18n="terminal.switch_to" data-i18n-params='{"service":"NapCat"}'>切换到 NapCat</span></a>
     {% elif active_bot_type == 'llonebot' %}
-    <a href="/terminal/llonebot" class="btn btn-sm btn-outline-secondary"><span data-i18n="terminal.switch_to" data-i18n-params='{"service":"LLOneBot"}'>切换到 LLOneBot</span></a>
+    <a href="/terminal/llonebot?instance_id={{ instance_id }}" class="btn btn-sm btn-outline-secondary"><span data-i18n="terminal.switch_to" data-i18n-params='{"service":"LLOneBot"}'>切换到 LLOneBot</span></a>
     {% endif %}
     {% else %}
-    <a href="/terminal/astrbot" class="btn btn-sm btn-outline-secondary"><span data-i18n="terminal.switch_to" data-i18n-params='{"service":"AstrBot"}'>切换到 AstrBot</span></a>
+    <a href="/terminal/astrbot?instance_id={{ instance_id }}" class="btn btn-sm btn-outline-secondary"><span data-i18n="terminal.switch_to" data-i18n-params='{"service":"AstrBot"}'>切换到 AstrBot</span></a>
     {% endif %}
     <button class="btn btn-sm btn-outline-info" onclick="reconnect()">
       <i class="bi bi-arrow-clockwise me-1"></i><span data-i18n="terminal.reconnect">重连</span>
     </button>
-    <a href="/dashboard" class="btn btn-sm btn-outline-secondary"><span data-i18n="terminal.back_btn">← 返回</span></a>
+    <a href="/dashboard?instance_id={{ instance_id }}" class="btn btn-sm btn-outline-secondary"><span data-i18n="terminal.back_btn">← 返回</span></a>
   </div>
 </div>
 

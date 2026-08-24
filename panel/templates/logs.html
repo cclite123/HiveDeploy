@@ -10,24 +10,24 @@
     <h4 class="mb-0 fw-semibold">
       <i class="bi bi-terminal me-2"></i>{{ service }} <span data-i18n="dashboard.logs">日志</span>
     </h4>
-    <p class="text-secondary mb-0 mt-1" style="font-size:.875rem;" data-i18n="logs.container_info" data-i18n-params='{"container":"{{ service }}_{{ user.username }}"}'>
-      容器: <span class="tag-pill">{{ service }}_{{ user.username }}</span> — 最近 200 行
+    <p class="text-secondary mb-0 mt-1" style="font-size:.875rem;" data-i18n="logs.container_info" data-i18n-params='{"container":"{{ container_name }}"}'>
+      容器: <span class="tag-pill">{{ container_name }}</span> — 最近 200 行
     </p>
   </div>
   <div class="d-flex gap-2 flex-wrap">
-    {% set active_bot_type = (user.instance.bot_type or 'napcat') if user.instance else none %}
+    {% set active_bot_type = (active_instance.bot_type or 'napcat') if active_instance else none %}
     {% if service == 'astrbot' %}
     {% if active_bot_type == 'napcat' %}
-    <a href="/logs/napcat" class="btn btn-sm btn-outline-info btn-action">
+    <a href="/logs/napcat?instance_id={{ instance_id }}" class="btn btn-sm btn-outline-info btn-action">
       <i class="bi bi-arrow-left-right me-1"></i><span data-i18n="logs.switch_to" data-i18n-params='{"service":"NapCat"}'>切换到 NapCat</span>
     </a>
     {% elif active_bot_type == 'llonebot' %}
-    <a href="/logs/llonebot" class="btn btn-sm btn-outline-info btn-action">
+    <a href="/logs/llonebot?instance_id={{ instance_id }}" class="btn btn-sm btn-outline-info btn-action">
       <i class="bi bi-arrow-left-right me-1"></i><span data-i18n="logs.switch_to" data-i18n-params='{"service":"LLOneBot"}'>切换到 LLOneBot</span>
     </a>
     {% endif %}
     {% else %}
-    <a href="/logs/astrbot" class="btn btn-sm btn-outline-info btn-action">
+    <a href="/logs/astrbot?instance_id={{ instance_id }}" class="btn btn-sm btn-outline-info btn-action">
       <i class="bi bi-arrow-left-right me-1"></i><span data-i18n="logs.switch_to" data-i18n-params='{"service":"AstrBot"}'>切换到 AstrBot</span>
     </a>
     {% endif %}
@@ -85,6 +85,7 @@ const refreshIcon = document.getElementById('refreshIcon');
 const timerEl = document.getElementById('refreshTimer');
 const lineCount = document.getElementById('lineCount');
 const SERVICE = '{{ service }}';
+const INSTANCE_ID = '{{ instance_id or "" }}';
 let refreshCountdown = 5;
 let refreshInFlight = false;
 
@@ -109,7 +110,8 @@ async function refreshLogs() {
   logPulse.classList.remove('stopped');
 
   try {
-    const r = await fetch(`/api/logs/${SERVICE}?lines=200`, {headers: {'Accept': 'application/json'}});
+    const suffix = INSTANCE_ID ? `&instance_id=${encodeURIComponent(INSTANCE_ID)}` : '';
+    const r = await fetch(`/api/logs/${SERVICE}?lines=200${suffix}`, {headers: {'Accept': 'application/json'}});
     const d = await r.json();
     if (d.ok) {
       logBox.textContent = d.logs || '';

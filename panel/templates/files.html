@@ -630,9 +630,9 @@ html[data-theme="light"] .fm-upload-progress {
     <span class="badge bg-primary ms-2 text-uppercase">{{ service }}</span>
   </h5>
   <div class="fm-page-actions">
-    <a href="/dashboard" class="btn btn-sm btn-outline-light"><i class="bi bi-house"></i> <span data-i18n="files.dashboard_btn">仪表盘</span></a>
-    <a href="/logs/{{ service }}" class="btn btn-sm btn-outline-light ms-2"><i class="bi bi-journal-text"></i> <span data-i18n="files.logs_btn">日志</span></a>
-    <a href="/terminal/{{ service }}" class="btn btn-sm btn-outline-light ms-2"><i class="bi bi-terminal"></i> <span data-i18n="files.terminal_btn">终端</span></a>
+    <a href="/dashboard?instance_id={{ instance_id }}" class="btn btn-sm btn-outline-light"><i class="bi bi-house"></i> <span data-i18n="files.dashboard_btn">仪表盘</span></a>
+    <a href="/logs/{{ service }}?instance_id={{ instance_id }}" class="btn btn-sm btn-outline-light ms-2"><i class="bi bi-journal-text"></i> <span data-i18n="files.logs_btn">日志</span></a>
+    <a href="/terminal/{{ service }}?instance_id={{ instance_id }}" class="btn btn-sm btn-outline-light ms-2"><i class="bi bi-terminal"></i> <span data-i18n="files.terminal_btn">终端</span></a>
   </div>
 </div>
 

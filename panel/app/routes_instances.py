@@ -803,7 +803,10 @@ async def view_logs(service: str, request: Request,
     logs = (get_container_logs(user.username, service, 200) if instance_key(inst) == "default"
             else get_context_container_logs(user.username, instance_key(inst), service, 200))
     return templates.TemplateResponse(request, "logs.html",
-        {"user": user, "service": service, "logs": logs})
+        {"user": user, "active_instance": inst, "instance": inst,
+         "instance_id": inst.id,
+         "container_name": instance_container_name_for_user(user.username, service, instance_key(inst)),
+         "service": service, "logs": logs})
 
 
 @router.get("/api/logs/{service}")
