@@ -971,6 +971,7 @@ def create_instance_context_async(username: str, user_id: int, instance_key: str
     """创建非默认实例。所有命名/目录/端口均由实例上下文决定。"""
     registries = resolve_image_registries(image_source_id)
     key = f"{username}:{instance_key}:both"
+    requested_extra_ports = extra_ports or []
 
     def _run():
         client = get_client()
@@ -982,8 +983,7 @@ def create_instance_context_async(username: str, user_id: int, instance_key: str
             bot_dir = os.path.join(root, bot_type)
             os.makedirs(astrbot_dir, exist_ok=True)
             os.makedirs(bot_dir, exist_ok=True)
-            extra_ports = extra_ports or []
-            effective_ws = _effective_ws_port(extra_ports, ports["astrbot_ws"])
+            effective_ws = _effective_ws_port(requested_extra_ports, ports["astrbot_ws"])
             write_astrbot_config(astrbot_dir, username, instance_key)
             if bot_type != "llonebot":
                 write_napcat_config(bot_dir, username, effective_ws, instance_key)
@@ -1001,8 +1001,8 @@ def create_instance_context_async(username: str, user_id: int, instance_key: str
                 else:
                     ensure_local_image(client, image, progress, registries=registries)
             empty = {}
-            ab_extra = {f"{ep['container_port']}/tcp": ep["host_port"] for ep in extra_ports if ep.get("service") == "astrbot"}
-            bot_extra = {f"{ep['container_port']}/tcp": ep["host_port"] for ep in extra_ports if ep.get("service") == bot_type}
+            ab_extra = {f"{ep['container_port']}/tcp": ep["host_port"] for ep in requested_extra_ports if ep.get("service") == "astrbot"}
+            bot_extra = {f"{ep['container_port']}/tcp": ep["host_port"] for ep in requested_extra_ports if ep.get("service") == bot_type}
             bot_c = (_run_llonebot(client, username, user_id, ports, root, bot_extra, instance_key)
                      if bot_type == "llonebot" else
                      _run_napcat(client, username, user_id, ports, root, bot_extra, instance_key))
