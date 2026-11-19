@@ -15,7 +15,7 @@ from app.service_access import available_instance_services, ensure_instance_serv
 
 
 def _user(bot_type=None):
-    instance = None if bot_type is None else SimpleNamespace(bot_type=bot_type)
+    instance = None if bot_type is None else SimpleNamespace(id=42, bot_type=bot_type)
     return SimpleNamespace(instance=instance, is_admin=False)
 
 
@@ -48,16 +48,16 @@ class ServiceNavigationTests(unittest.TestCase):
     def test_llonebot_instance_hides_napcat_logs_terminal_and_files(self):
         rendered = self.render_sidebar("llonebot")
         for prefix in ("logs", "terminal", "files"):
-            self.assertIn(f'href="/{prefix}/astrbot"', rendered)
-            self.assertIn(f'href="/{prefix}/llonebot"', rendered)
-            self.assertNotIn(f'href="/{prefix}/napcat"', rendered)
+            self.assertIn(f'href="/{prefix}/astrbot?instance_id=42"', rendered)
+            self.assertIn(f'href="/{prefix}/llonebot?instance_id=42"', rendered)
+            self.assertNotIn(f'href="/{prefix}/napcat', rendered)
 
     def test_napcat_instance_hides_llonebot_logs_terminal_and_files(self):
         rendered = self.render_sidebar("napcat")
         for prefix in ("logs", "terminal", "files"):
-            self.assertIn(f'href="/{prefix}/astrbot"', rendered)
-            self.assertIn(f'href="/{prefix}/napcat"', rendered)
-            self.assertNotIn(f'href="/{prefix}/llonebot"', rendered)
+            self.assertIn(f'href="/{prefix}/astrbot?instance_id=42"', rendered)
+            self.assertIn(f'href="/{prefix}/napcat?instance_id=42"', rendered)
+            self.assertNotIn(f'href="/{prefix}/llonebot', rendered)
 
     def test_account_without_instance_has_no_service_entries(self):
         rendered = self.render_sidebar()
